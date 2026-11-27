@@ -63,19 +63,36 @@
 - Production audit hardening: separate DB roles, backups and integrity verification.
 
 ## C — Read-only Yandex Direct connector
-### C1 — Fixed-contract read client [IN PROGRESS]
+### C1 — Fixed-contract read client [COMPLETE]
 - [x] Verify official API v501 docs, OAuth and developer approval requirements.
 - [x] Implement allowlisted Campaigns.get and AgencyClients.get with pagination cap.
 - [x] Sanitize upstream errors; keep OAuth token out of persisted configuration.
 - [x] Add an interactive terminal-only probe; no token in shell history.
 - [x] Offline contract tests using httpx.MockTransport (no real accounts).
-- [ ] Green GitHub Actions and merged PR.
+- [x] Green GitHub Actions, merged PR and live read-only probe (377 agency clients and 243 campaigns, 2026-11-27).
 
-### C2 — Authorized live-account linkage [NOT STARTED]
-- [ ] Obtain developer app approval and use a separate permitted test account.
-- [ ] Design revocable/encrypted server-side token storage before persistent sync.
-- [ ] Bind the selected Direct client login to an authorized MAKO project.
-- [ ] Pull a small campaign inventory and verify against the Direct UI.
+### C2 — Authorized live-account linkage
+#### C2.2a — Non-secret project-account mapping [IN PROGRESS]
+- [x] Implement additive migration 0004 for one Yandex Direct login per project.
+- [x] Enforce owner/admin authorization, exact Origin, archived read-only and tenant isolation.
+- [x] Record bind/change/unbind in append-only project history.
+- [x] Display explicit "configured_unverified" status in the local dashboard.
+- [x] Reject client-submitted OAuth token or extra credentials in payload.
+- [x] Add deterministic PostgreSQL and HTTP tests (no Yandex calls).
+- [ ] CI green, PR merged and local migration verified.
+
+#### C2.2b — Actual OAuth connection [NOT STARTED]
+- [x] API-approved OAuth application and local live read-only probe confirmed (2026-11-27).
+- [ ] Define an encrypted-at-rest credential store; keep keys outside PostgreSQL and git.
+- [ ] Build verified OAuth authorization, token refresh/revocation and lifecycle.
+- [ ] Verify the bound advertiser login against AgencyClients.get before marking connected.
+- [ ] Retrieve campaign inventory and compare with Yandex Direct UI.
+- [ ] Confirm GDPR/local regulatory and account authorization requirements before customer data.
+
+#### C2.2c — Sync and provider status [NOT STARTED]
+- [ ] Store safe tenant-bound freshness/status metadata.
+- [ ] Add explicit on-demand, bounded read-only sync.
+- [ ] No automatic background tasks until token lifecycle and quotas are tested.
 
 ### C3 — Statistics ingestion [NOT STARTED]
 - [ ] Read Reports TSV, handle 202/429 and quotas, reconcile dates/currency/conversions.

@@ -1,6 +1,6 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–B2.4b complete. C1: isolated, read-only Yandex Direct API client (no account connected yet).**
+**Milestones A–C1 complete. C2.2a: per-project Yandex Direct login mapping (without OAuth storage).**
 
 This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data or paid AI is connected. C1 includes a disabled-by-default provider client and optional interactive local probe; no OAuth token is persisted or uploaded. Do not expose it publicly.
 
@@ -109,6 +109,31 @@ The prompt hides the token (never put it in the command line, a chat, GitHub,
 a screenshot, the frontend or an environment file). It prints only counts,
 not account/client/campaign names. Do not use a live customer account without
 authorization. We will design secure persistent OAuth linkage in C2.
+
+## C2.2a — link a Yandex Direct login to a project
+
+After `git pull`, rebuild and apply the additive database migration:
+```powershell
+docker compose up --build -d
+docker compose exec backend alembic -c /app/alembic.ini upgrade head
+docker compose exec backend alembic -c /app/alembic.ini current
+```
+Expect `0004_direct_binding (head)`.
+
+Open `http://localhost:3000`; log in as a local organization owner/admin,
+then expand **Настроить Яндекс Директ** on an active project card.
+Enter the authorized advertiser's Direct **Client-Login** (not the agency login).
+You can edit or unlink it; all changes are in the project's append-only
+**История**. Archived projects are read-only. Only organization owners/admins
+can view or change binding details.
+
+**This does not connect, authorize, or sync a Yandex account.** The link has
+status `configured_unverified`. No OAuth tokens, passwords, campaign data or
+secret keys are stored in this new table or submitted through the browser.
+Do not paste an OAuth token into any MAKO web form. The separate interactive
+CLI probe remains the ONLY supported read-only live API check at this stage.
+The new binding cannot be used for live sync until C2.2b secure OAuth
+lifecycle is implemented. The local PostgreSQL volume must be preserved.
 
 ## Tests
 ```bash
