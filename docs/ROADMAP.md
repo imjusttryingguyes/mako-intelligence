@@ -23,11 +23,14 @@
 - [x] Green CI for the pull request (35 tests passed, no failed checks).
 - [x] Merge to main and verify final CI.
 
-### B2.2 — Local login and first project view [IN PROGRESS]
+### B2.2 — Local login and first project view [READY FOR LOCAL VERIFICATION]
 - [x] Design DB-backed sessions and one-time owner bootstrap.
 - [x] Implement local-only login and logout (no hardcoded credentials).
 - [x] Implement protected read-only project endpoints and frontend list.
-- [ ] Test unauthorized, cross-organization, archived and missing-project access.
+- [x] 47 backend tests green in PR CI; frontend build green.
+- [ ] Merge to main and verify final CI.
+- [ ] Local bootstrap, login/logout and demonstration project check in VS Code.
+- [x] Test unauthorized, cross-organization, archived and missing-project access.
 
 ## C — Read-only Yandex connector
 - Confirm API requirements and permissions.
