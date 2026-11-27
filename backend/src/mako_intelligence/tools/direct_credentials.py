@@ -25,7 +25,11 @@ from mako_intelligence.db.models import (
     User,
 )
 from mako_intelligence.db.session import get_engine
-from mako_intelligence.integrations.direct_vault import DirectVault, DirectVaultError, load_vault_key
+from mako_intelligence.integrations.direct_vault import (
+    DirectVault,
+    DirectVaultError,
+    load_vault_key,
+)
 from mako_intelligence.integrations.yandex_direct import DirectReadClient, DirectReadError
 from mako_intelligence.tools.yandex_direct_probe import prompt_for_token
 

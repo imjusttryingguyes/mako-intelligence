@@ -7,11 +7,10 @@ import getpass
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
+from test_auth_http import api as api  # Reuse the disposable PostgreSQL fixture.
 
 from mako_intelligence.db.models import OrganizationDirectCredential
 from mako_intelligence.integrations.direct_vault import DirectVault
-from test_auth_http import api as api  # Reuse the disposable PostgreSQL fixture.
-
 from mako_intelligence.tools import direct_credentials
 
 

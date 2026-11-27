@@ -20,7 +20,11 @@ from mako_intelligence.db.models import (
     User,
 )
 from mako_intelligence.db.session import get_db
-from mako_intelligence.integrations.direct_vault import DirectVault, DirectVaultError, load_vault_key
+from mako_intelligence.integrations.direct_vault import (
+    DirectVault,
+    DirectVaultError,
+    load_vault_key,
+)
 from mako_intelligence.integrations.yandex_direct import DirectReadClient, DirectReadError
 
 router = APIRouter(tags=["direct-verification"])
