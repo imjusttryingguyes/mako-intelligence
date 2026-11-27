@@ -181,7 +181,7 @@ class ProjectEvent(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "action IN ('rename', 'archive', 'restore')",
+            "action IN ('rename', 'archive', 'restore', 'direct_bind', 'direct_unbind')",
             name="ck_project_events_action",
         ),
         Index("ix_project_events_org_project_created", "organization_id", "project_id", "created_at"),
@@ -201,6 +201,42 @@ class ProjectEvent(Base):
     new_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     old_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     new_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    old_client_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    new_client_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+
+class ProjectDirectBinding(Base):
+    """One non-secret Yandex Direct client-login configuration per project.
+
+    No OAuth tokens, credentials, or verified authorization are stored here.
+    """
+    __tablename__ = "project_direct_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "project_id"],
+            ["projects.organization_id", "projects.id"],
+            name="fk_direct_bindings_project_org",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "client_login ~ '^[A-Za-z0-9][A-Za-z0-9._@-]{0,254}$'",
+            name="ck_direct_bindings_login",
+        ),
+        CheckConstraint(
+            "status = 'configured_unverified'",
+            name="ck_direct_bindings_status",
+        ),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    client_login: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'configured_unverified'"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
