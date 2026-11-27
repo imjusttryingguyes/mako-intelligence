@@ -42,8 +42,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # Temporary one-time bootstrap: regenerate a portable npm lockfile in CI
+      # and print it in a marked machine-readable form for committing to git.
+      - name: Generate portable lockfile (temporary)
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Export portable lockfile (temporary)
+        run: node -e 'console.log("LOCKFILE_JSON_START" + JSON.stringify(require("./package-lock.json")) + "LOCKFILE_JSON_END")'
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
       - name: Build
