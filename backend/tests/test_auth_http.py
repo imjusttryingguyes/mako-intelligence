@@ -23,6 +23,7 @@ from mako_intelligence.db.models import (
     Organization,
     OrganizationMembership,
     Project,
+    ProjectDirectBinding,
     ProjectEvent,
     ProjectMembership,
     User,
@@ -617,3 +618,223 @@ def test_audit_events_must_reference_project_in_same_organization(api) -> None:
         db.flush()
     savepoint.rollback()
     assert not db.scalar(select(ProjectEvent.id).limit(1))
+
+
+def binding_url(org: uuid.UUID, project: uuid.UUID) -> str:
+    return f"/organizations/{org}/projects/{project}/direct-binding"
+
+
+def put_binding(
+    client: TestClient,
+    org: uuid.UUID,
+    project: uuid.UUID,
+    login: str = "client-example",
+    *,
+    headers: dict[str, str] | None = None,
+    extra: dict | None = None,
+):
+    payload = {"client_login": login}
+    if extra is not None:
+        payload.update(extra)
+    return client.put(
+        binding_url(org, project),
+        json=payload,
+        headers={"Origin": ORIGIN} if headers is None else headers,
+    )
+
+
+def remove_binding_request(
+    client: TestClient,
+    org: uuid.UUID,
+    project: uuid.UUID,
+    *,
+    headers: dict[str, str] | None = None,
+):
+    return client.delete(
+        binding_url(org, project),
+        headers={"Origin": ORIGIN} if headers is None else headers,
+    )
+
+
+def test_direct_binding_requires_authenticated_user(api) -> None:
+    client, _db, ids, _password = api
+    url = binding_url(ids["org"], ids["first"])
+    assert client.get(url).status_code == 401
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 401
+    assert remove_binding_request(client, ids["org"], ids["first"]).status_code == 401
+
+
+def test_owner_can_configure_read_change_and_unlink_without_storing_token(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    url = binding_url(ids["org"], ids["first"])
+    assert client.get(url).json() == {
+        "provider": "yandex_direct", "client_login": None,
+        "status": "not_configured",
+    }
+    response = put_binding(client, ids["org"], ids["first"])
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "yandex_direct", "client_login": "client-example",
+        "status": "configured_unverified",
+    }
+    record = db.get(ProjectDirectBinding, ids["first"])
+    assert record is not None
+    assert record.organization_id == ids["org"]
+    assert record.status == "configured_unverified"
+
+    # No duplicate audit event when saving the exact same value.
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"], "client-other").status_code == 200
+
+    history = client.get(
+        f"/organizations/{ids['org']}/projects/{ids['first']}/history"
+    ).json()
+    assert len(history) == 2
+    assert all(event["action"] == "direct_bind" for event in history)
+    first_event = next(
+        event for event in history if event["old_client_login"] is None
+    )
+    assert first_event["new_client_login"] == "client-example"
+    assert all(event["actor_id"] == str(ids["owner"]) for event in history)
+
+    removed = remove_binding_request(client, ids["org"], ids["first"])
+    assert removed.status_code == 204
+    assert db.get(ProjectDirectBinding, ids["first"]) is None
+    assert client.get(url).json()["status"] == "not_configured"
+    assert remove_binding_request(client, ids["org"], ids["first"]).status_code == 404
+
+    history = client.get(
+        f"/organizations/{ids['org']}/projects/{ids['first']}/history"
+    ).json()
+    assert len(history) == 3
+    assert any(
+        item["action"] == "direct_unbind"
+        and item["old_client_login"] == "client-other"
+        and item["new_client_login"] is None
+        for item in history
+    )
+
+
+def test_org_admin_can_bind_only_active_project(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(OrganizationMembership, (ids["org"], ids["member"]))
+    membership.role = "admin"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    assert put_binding(client, ids["org"], ids["second"], "permitted").status_code == 200
+
+
+def test_regular_member_even_manager_cannot_read_or_modify_connection(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(ProjectMembership, (ids["first"], ids["member"]))
+    membership.role = "manager"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    url = binding_url(ids["org"], ids["first"])
+    assert client.get(url).status_code == 403
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 403
+    assert remove_binding_request(client, ids["org"], ids["first"]).status_code == 403
+
+
+def test_direct_binding_never_discloses_cross_org_projects(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for org, project in (
+        (ids["other_org"], ids["other_project"]),
+        (ids["org"], ids["other_project"]),
+        (ids["org"], uuid.uuid4()),
+    ):
+        url = binding_url(org, project)
+        assert client.get(url).status_code == 404
+        assert put_binding(client, org, project).status_code == 404
+        assert remove_binding_request(client, org, project).status_code == 404
+
+    assert db.scalar(select(ProjectDirectBinding.project_id).limit(1)) is None
+
+
+def test_archived_projects_are_read_only_for_direct_binding(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert client.get(binding_url(ids["org"], ids["archived"])).status_code == 200
+    assert put_binding(client, ids["org"], ids["archived"]).status_code == 409
+    assert remove_binding_request(client, ids["org"], ids["archived"]).status_code == 409
+
+
+def test_direct_binding_mutations_require_same_frontend_origin(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert put_binding(
+            client, ids["org"], ids["first"], headers=headers
+        ).status_code == 403
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 200
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert remove_binding_request(
+            client, ids["org"], ids["first"], headers=headers
+        ).status_code == 403
+    assert db.get(ProjectDirectBinding, ids["first"]) is not None
+
+
+@pytest.mark.parametrize(
+    "login", ["", "bad login", "bad\nlogin", "../thing", "кириллица", "-bad", "x" * 256]
+)
+def test_direct_login_validation(login: str, api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"], login).status_code == 422
+    assert db.get(ProjectDirectBinding, ids["first"]) is None
+
+
+def test_direct_binding_rejects_unexpected_credential_fields(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert put_binding(
+        client, ids["org"], ids["first"],
+        extra={"oauth_token": "NOT-A-REAL-SECRET"},
+    ).status_code == 422
+    assert db.get(ProjectDirectBinding, ids["first"]) is None
+
+
+def test_binding_has_database_tenant_foreign_key(api) -> None:
+    _client, db, ids, _password = api
+    savepoint = db.begin_nested()
+    with pytest.raises(DBAPIError):
+        db.add(ProjectDirectBinding(
+            organization_id=ids["other_org"],
+            project_id=ids["first"],
+            client_login="bad-tenant",
+        ))
+        db.flush()
+    savepoint.rollback()
+    assert not db.scalar(select(ProjectDirectBinding.project_id).limit(1))
+
+
+def test_direct_binding_preflight_allows_only_trusted_origin(api) -> None:
+    client, _db, ids, _password = api
+    url = binding_url(ids["org"], ids["first"])
+    for method in ("PUT", "DELETE"):
+        response = client.options(url, headers={
+            "Origin": ORIGIN, "Access-Control-Request-Method": method,
+            "Access-Control-Request-Headers": "content-type",
+        })
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == ORIGIN
+        assert method in response.headers.get("access-control-allow-methods", "")
+    response = client.options(url, headers={
+        "Origin": "https://attacker.example", "Access-Control-Request-Method": "PUT",
+    })
+    assert response.headers.get("access-control-allow-origin") is None
+
+
+def test_binding_is_organization_scoped_even_with_same_login(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"], "shared-login").status_code == 200
+    assert sign_in(client, db.get(User, ids["stranger"]).email, password).status_code == 200
+    assert put_binding(
+        client, ids["other_org"], ids["other_project"], "shared-login"
+    ).status_code == 200
+    assert client.get(binding_url(ids["org"], ids["first"])).status_code == 404
+    other = client.get(binding_url(ids["other_org"], ids["other_project"])).json()
+    assert other["client_login"] == "shared-login"
