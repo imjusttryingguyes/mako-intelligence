@@ -1,8 +1,8 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–C1 complete. C2.2a: per-project Yandex Direct login mapping (without OAuth storage).**
+**Milestones A–C2.2a complete. C2.2b1: encrypted local agency token and read-only account verification.**
 
-This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data or paid AI is connected. C1 includes a disabled-by-default provider client and optional interactive local probe; no OAuth token is persisted or uploaded. Do not expose it publicly.
+This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data or paid AI is connected. C1 includes a restricted read-only provider client. C2.2b1 adds optional **local-only encrypted** agency token storage, initialized and imported by explicit user action; the token is never accepted by a web form or committed to GitHub. Do not expose it publicly.
 
 ## Requirements
 - Git
@@ -134,6 +134,57 @@ Do not paste an OAuth token into any MAKO web form. The separate interactive
 CLI probe remains the ONLY supported read-only live API check at this stage.
 The new binding cannot be used for live sync until C2.2b secure OAuth
 lifecycle is implemented. The local PostgreSQL volume must be preserved.
+
+## C2.2b1 — local encrypted agent token and project verification
+
+**Local development only.** After `git pull`, first rebuild and apply the
+additive schema migration:
+
+```powershell
+docker compose up --build -d
+docker compose exec backend alembic -c /app/alembic.ini upgrade head
+docker compose exec backend alembic -c /app/alembic.ini current
+```
+
+Expect `0005_direct_vault (head)`. Then initialize the key **once**:
+
+```powershell
+docker compose exec --user root backend python -m mako_intelligence.tools.init_direct_key
+```
+
+This creates a key in a new independent Docker named volume. It prints no key
+material, refuses overwrite, and grants read-only access to the backend group.
+**Never lose this volume while encrypted credentials exist.** No `down -v`.
+
+To link the agency's **already approved token** locally, run:
+
+```powershell
+docker compose exec backend python -m mako_intelligence.tools.direct_credentials import
+```
+
+Enter organization slug `mako` (or your own), MAKO owner email and password
+(hidden), then select token entry mode **2** for a hidden, character-counted
+prompt. The CLI first runs a read-only `AgencyClients.get`; on success it
+encrypts the token before writing to the organization's database row.
+
+Open `http://localhost:3000`, sign in, and expand **Настроить Яндекс Директ**
+on an active project with its advertiser login already saved. Refresh the
+browser after importing the token. Click **Проверить доступ к Директу**. MAKO
+will compare the login against agency clients and request the campaign count;
+you will see the count and timestamp of the last successful check.
+**No campaign names or statistics are saved or returned yet.**
+
+Remove the locally stored credential with:
+
+```powershell
+docker compose exec backend python -m mako_intelligence.tools.direct_credentials remove
+```
+
+This deletes the local encrypted token but does **not** revoke the token
+inside Yandex OAuth. For full revocation, also revoke it in Yandex.
+
+See `docs/DIRECT_VAULT_C22B1.md` for limitations, rollback risks, secrets
+lifecycle and troubleshooting.
 
 ## Tests
 ```bash

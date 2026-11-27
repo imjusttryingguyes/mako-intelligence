@@ -72,22 +72,34 @@
 - [x] Green GitHub Actions, merged PR and live read-only probe (377 agency clients and 243 campaigns, 2026-11-27).
 
 ### C2 — Authorized live-account linkage
-#### C2.2a — Non-secret project-account mapping [IN PROGRESS]
+#### C2.2a — Non-secret project-account mapping [COMPLETE]
 - [x] Implement additive migration 0004 for one Yandex Direct login per project.
 - [x] Enforce owner/admin authorization, exact Origin, archived read-only and tenant isolation.
 - [x] Record bind/change/unbind in append-only project history.
 - [x] Display explicit "configured_unverified" status in the local dashboard.
 - [x] Reject client-submitted OAuth token or extra credentials in payload.
 - [x] Add deterministic PostgreSQL and HTTP tests (no Yandex calls).
-- [ ] CI green, PR merged and local migration verified.
+- [x] CI green, PR merged and local migration verified by owner (2026-11-27).
 
-#### C2.2b — Actual OAuth connection [NOT STARTED]
+#### C2.2b1 — Local manual OAuth token vault + verified account [IN PROGRESS]
+- [x] Build authenticated AES-256-GCM vault, key in separate local Docker volume.
+- [x] Add one encrypted agency credential per organization, shared by its projects.
+- [x] Import, rotate and remove token from local CLI after MAKO owner/admin password check.
+- [x] Add an owner/admin on-demand verification button using AgencyClients.get and Campaigns.get.
+- [x] Show campaign count and timestamp of latest success; do not promise continuous connectivity.
+- [x] Add offline isolation/security tests and additive migration 0005.
+- [ ] CI green and merged; local owner runs key init, token import and project verification.
+
+#### C2.2b2 — Production OAuth authorization/lifecycle [NOT STARTED]
 - [x] API-approved OAuth application and local live read-only probe confirmed (2026-11-27).
-- [ ] Define an encrypted-at-rest credential store; keep keys outside PostgreSQL and git.
-- [ ] Build verified OAuth authorization, token refresh/revocation and lifecycle.
-- [ ] Verify the bound advertiser login against AgencyClients.get before marking connected.
-- [ ] Retrieve campaign inventory and compare with Yandex Direct UI.
-- [ ] Confirm GDPR/local regulatory and account authorization requirements before customer data.
+- [ ] Build OAuth authorization-code flow with CSRF state, exact client ID, and token refresh/expiry handling.
+- [ ] Encrypt token with production-grade secret manager and least privilege roles.
+- [ ] Implement trusted revocation, rotation, backup/recovery and incident response.
+- [ ] Confirm legal/privacy/account authorization requirements before customer deployment.
+
+#### C2.2b3 — Campaign inventory [NOT STARTED]
+- [ ] Store selected advertiser's authorized campaign IDs/names with freshness, scoped to MAKO project.
+- [ ] Reconcile inventory against actual Yandex Direct UI.
 
 #### C2.2c — Sync and provider status [NOT STARTED]
 - [ ] Store safe tenant-bound freshness/status metadata.
