@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 from mako_intelligence.api.routes.auth import _require_origin, authenticated_user
 from mako_intelligence.core.permissions import project_permissions, visible_projects
 from mako_intelligence.db.models import (
-    Organization, OrganizationMembership, Project, ProjectEvent, User,
+    Organization,
+    OrganizationMembership,
+    Project,
+    ProjectEvent,
+    User,
 )
 from mako_intelligence.db.session import get_db
 
