@@ -27,6 +27,7 @@ export default function Home() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationId, setOrganizationId] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loadedOrganizationId, setLoadedOrganizationId] = useState("");
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -68,18 +69,26 @@ export default function Home() {
   useEffect(() => {
     if (view !== "dashboard" || !organizationId) {
       setProjects([]);
+      setLoadedOrganizationId("");
       return;
     }
     let active = true;
     // Never display projects from the previously selected organization while loading.
     setProjects([]);
+    setLoadedOrganizationId("");
     setLoadingProjects(true);
     setError("");
     void getJSON<Project[]>(`/organizations/${organizationId}/projects`)
-      .then((data) => { if (active) setProjects(data); })
+      .then((data) => {
+        if (active) {
+          setProjects(data);
+          setLoadedOrganizationId(organizationId);
+        }
+      })
       .catch(() => {
         if (active) {
           setProjects([]);
+          setLoadedOrganizationId(organizationId);
           setError("Не удалось получить список проектов.");
         }
       })
@@ -129,6 +138,7 @@ export default function Home() {
       setUser(null);
       setOrganizations([]);
       setProjects([]);
+      setLoadedOrganizationId("");
       setOrganizationId("");
       setView("login");
     } catch {
@@ -137,6 +147,10 @@ export default function Home() {
       setBusy(false);
     }
   }
+
+  // Compare organization IDs during render; old-tenant cards never flash on switch.
+  const displayedProjects = loadedOrganizationId === organizationId ? projects : [];
+  const projectLoading = loadingProjects || (!!organizationId && loadedOrganizationId !== organizationId);
 
   return (
     <main className="shell">
@@ -236,17 +250,17 @@ export default function Home() {
             <span className="pill neutral">Режим: просмотр</span>
           </div>
 
-          <div className="section-top"><h2>Проекты</h2><span>{projects.length} доступно</span></div>
+          <div className="section-top"><h2>Проекты</h2><span>{displayedProjects.length} доступно</span></div>
           {error && <div role="alert" className="error-message">{error}</div>}
-          {loadingProjects && <p className="muted">Загружаем проекты…</p>}
-          {!loadingProjects && !organizations.length && (
+          {projectLoading && <p className="muted">Загружаем проекты…</p>}
+          {!projectLoading && !organizations.length && (
             <p className="empty-state">У пользователя пока нет организаций.</p>
           )}
-          {!loadingProjects && organizations.length > 0 && projects.length === 0 && (
+          {!projectLoading && organizations.length > 0 && displayedProjects.length === 0 && (
             <p className="empty-state">Нет доступных проектов в этой организации.</p>
           )}
           <div className="project-grid">
-            {!loadingProjects && projects.map((project) => (
+            {!projectLoading && displayedProjects.map((project) => (
               <article key={project.id} className="project-card">
                 <div className="project-card-top">
                   <span className="project-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
