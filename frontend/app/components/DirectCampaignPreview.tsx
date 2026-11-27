@@ -2,8 +2,22 @@
 
 import { useState } from "react";
 
-type Campaign = { id: number; name: string };
-type Preview = { count: number; fetched_at: string; campaigns: Campaign[] };
+type Campaign = {
+  id: number;
+  name: string;
+  type: string | null;
+  source: "campaigns" | "reports" | "both";
+};
+type Preview = {
+  count: number;
+  campaigns_get_count: number;
+  reports_only_count: number;
+  report_status: "ready" | "pending" | "unavailable";
+  report_period: "LAST_365_DAYS";
+  completeness: "period_limited" | "incomplete";
+  fetched_at: string;
+  campaigns: Campaign[];
+};
 type Props = { organizationId: string; projectId: string };
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -15,6 +29,7 @@ export default function DirectCampaignPreview({ organizationId, projectId }: Pro
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [reportOnly, setReportOnly] = useState(false);
 
   async function load() {
     if (busy) return;
@@ -23,6 +38,7 @@ export default function DirectCampaignPreview({ organizationId, projectId }: Pro
     setData(null);
     setSearch("");
     setPage(0);
+    setReportOnly(false);
     try {
       const response = await fetch(
         `${api}/organizations/${organizationId}/projects/${projectId}/direct-campaign-preview`,
@@ -53,8 +69,12 @@ export default function DirectCampaignPreview({ organizationId, projectId }: Pro
   const normalized = search.trim().toLocaleLowerCase("ru-RU");
   const filtered = data
     ? data.campaigns.filter((campaign) =>
-        campaign.name.toLocaleLowerCase("ru-RU").includes(normalized)
-        || String(campaign.id).includes(normalized))
+        (!reportOnly || campaign.source === "reports")
+        && (
+          campaign.name.toLocaleLowerCase("ru-RU").includes(normalized)
+          || String(campaign.id).includes(normalized)
+          || (campaign.type?.toLowerCase().includes(normalized) ?? false)
+        ))
     : [];
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -81,6 +101,33 @@ export default function DirectCampaignPreview({ organizationId, projectId }: Pro
             Получено: <strong>{data.count}</strong> ·{" "}
             {new Date(data.fetched_at).toLocaleString("ru-RU")}
           </p>
+          {data.report_status === "ready" ? (
+            <div className="campaign-coverage">
+              <p>
+                Через Campaigns.get: <strong>{data.campaigns_get_count}</strong>.
+                Дополнительно из отчёта: <strong>{data.reports_only_count}</strong>.
+              </p>
+              <p>
+                Отчёт охватывает статистику за последние 365 завершённых дней.
+                Кампании без статистики за период могут отсутствовать в обоих источниках.
+              </p>
+              {data.reports_only_count > 0 && (
+                <button
+                  type="button"
+                  className="project-settings-link"
+                  onClick={() => { setReportOnly((value) => !value); setPage(0); }}
+                >
+                  {reportOnly ? "Показать все кампании" : "Только найденные через отчёт"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="campaign-coverage campaign-coverage-warning" role="status">
+              {data.report_status === "pending"
+                ? "Отчёт Яндекса ещё формируется. Список пока неполный — нажми «Обновить список кампаний» позднее."
+                : "Не удалось получить отчёт Яндекса. Сейчас показаны только кампании из Campaigns.get. Список неполный."}
+            </div>
+          )}
           <label htmlFor={`campaign-search-${projectId}`} className="field-label">
             Поиск по названию или ID
           </label>
@@ -99,7 +146,12 @@ export default function DirectCampaignPreview({ organizationId, projectId }: Pro
             {displayed.map((campaign) => (
               <li key={campaign.id} className="campaign-preview-row">
                 <span className="campaign-preview-name">{campaign.name}</span>
-                <span className="campaign-preview-id">ID {campaign.id}</span>
+                <span className="campaign-preview-id">
+                  ID {campaign.id}
+                  {campaign.source === "reports" ? " · Только из статистики" : ""}
+                  {campaign.source === "both" ? " · API + статистика" : ""}
+                  {campaign.type ? ` · ${campaign.type}` : ""}
+                </span>
               </li>
             ))}
           </ul>

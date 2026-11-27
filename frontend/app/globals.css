@@ -208,3 +208,18 @@ footer {padding:28px 0;border-top:1px solid var(--border);color:#71849b;font-siz
 .campaign-preview-pagination {display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:12px;}
 .campaign-preview-pagination span {color:var(--muted);font-size:12px;}
 .campaign-preview-pagination .button {margin:0;padding:9px 11px;}
+
+.campaign-coverage {
+  margin:11px 0;
+  padding:12px 13px;
+  background:#13283a;
+  border:1px solid #355571;
+  border-radius:10px;
+  font-size:11px;
+  line-height:1.55;
+  color:#c8dcec;
+}
+.campaign-coverage p {margin:0 0 7px;}
+.campaign-coverage p:last-child {margin-bottom:0;}
+.campaign-coverage-warning {background:#38281c;border-color:#775339;color:#f1d2b5;}
+.campaign-coverage .project-settings-link {font-size:11px;}

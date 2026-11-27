@@ -215,6 +215,37 @@ verification. Token lifecycle remains manual in local Docker.
 
 See `docs/DIRECT_CAMPAIGN_PREVIEW_C22B3A.md`. No production deployment yet.
 
+## C2.2b3a.1 — product campaigns and incomplete inventory
+
+Campaigns.get does not necessarily list every campaign visible in Direct,
+especially campaign types managed via Campaign Master. The preview now
+also queries an explicitly allowlisted, **read-only** Reports endpoint for
+campaigns with statistics over `LAST_365_DAYS` (previous 365 days, excluding
+today). It merges by stable numeric campaign ID and labels entries that
+came **only from statistics**.
+
+The UI shows the number returned by Campaigns.get, the additional number
+found via Reports, and the reconciled total. If the report is still being
+generated (201/202), the UI warns that the inventory is incomplete and
+offers a manual refresh. Errors are likewise shown as incomplete coverage;
+MAKO never silently claims the management-only result includes everything.
+
+**Limitations:** campaigns with no statistics over the 365-day period may
+still be missing, including currently unlaunched product campaigns.
+A report is not a comprehensive historical catalog and no name/ID is
+stored in the MAKO database during this milestone. Yandex Reports may
+consume API quotas and take time to build.
+
+No migration or token import needed. Update locally with:
+```powershell
+git pull
+docker compose up --build -d
+```
+Then open an authorized verified project and click **Обновить список кампаний**.
+Look for a previously missing **Товарная кампания** by name or numeric ID.
+If the report is queued, repeat later. For full reconciliation compare
+specific campaign IDs with Yandex Direct.
+
 ## Tests
 ```bash
 python -m pip install -e './backend[dev]'

@@ -107,6 +107,17 @@
 - [ ] GitHub CI green and merge to main.
 - [ ] Owner verifies visible campaign names/IDs locally against Direct.
 
+#### C2.2b3a.1 — Repair product campaign coverage [IN PROGRESS]
+- [x] Identify the scope difference between Campaigns.get and Reports.
+- [x] Add read-only CAMPAIGN_PERFORMANCE_REPORT with CampaignId/Name/Type.
+- [x] Reconcile campaign IDs without duplicates; label report-only items.
+- [x] Report separate management, statistics-only and total counts.
+- [x] Surface pending/failed Reports instead of misrepresenting partial data as complete.
+- [x] Limit read-only report results to the last 365 completed days; mark period-dependent coverage.
+- [x] Add offline HTTP+TSV+security coverage tests.
+- [ ] PR and main CI green.
+- [ ] Owner confirms a previously missing product campaign is visible in local UI.
+
 #### C2.2b3b — Persisted campaign inventory [LATER]
 - [ ] Store authorized campaign IDs/names with freshness and source lineage, per MAKO project.
 - [ ] Support incremental refresh, correct campaign scope and archival history.
