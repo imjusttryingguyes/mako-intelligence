@@ -1052,3 +1052,187 @@ def test_direct_verify_key_unavailable_returns_503_without_leaking(api, monkeypa
     )
     assert response.status_code == 503
     assert "FAKE-NOT-REAL" not in response.text
+
+
+def preview_url(org: uuid.UUID, project: uuid.UUID) -> str:
+    return f"/organizations/{org}/projects/{project}/direct-campaign-preview"
+
+
+def prepare_verified_preview(api, monkeypatch):
+    """Set up a synthetic preverified advertiser without contacting Yandex."""
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 200
+    key = set_test_agency_token(db, ids["org"])
+    stub_direct_verify(monkeypatch, key)
+    result = client.post(verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert result.status_code == 200
+    return client, db, ids, key
+
+
+def stub_campaign_preview(monkeypatch, key, *, rows=None, error=None, on_fetch=None):
+    from mako_intelligence.api.routes import direct_campaigns
+    from mako_intelligence.integrations.yandex_direct import DirectReadError
+
+    if rows is None:
+        rows = [
+            {"Id": 39, "Name": "Z-test"},
+            {"Id": 11, "Name": "Alpha"},
+            {"Id": 27, "Name": "Бета"},
+        ]
+    calls = []
+
+    class FakeDirect:
+        def __init__(self, token):
+            assert token == "FAKE-NOT-REAL"
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get_campaigns(self, *, client_login):
+            calls.append(client_login)
+            if on_fetch is not None:
+                on_fetch()
+            if error is not None:
+                raise DirectReadError("never print secret", error_code=error)
+            return rows
+
+    monkeypatch.setattr(direct_campaigns, "DirectReadClient", FakeDirect)
+    monkeypatch.setattr(direct_campaigns, "load_vault_key", lambda: key)
+    return calls
+
+
+def test_preview_reads_only_selected_advertiser_and_returns_names_ids(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    calls = stub_campaign_preview(monkeypatch, key)
+    response = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["count"] == 3
+    assert [item["id"] for item in result["campaigns"]] == [11, 39, 27]
+    assert result["campaigns"][0]["name"] == "Alpha"
+    assert result["fetched_at"]
+    assert response.headers.get("cache-control") == "no-store"
+    assert calls == ["client-example"]
+    assert "FAKE-NOT-REAL" not in response.text
+    assert "agency" not in response.text
+    # The inventory is ephemeral and only the previous count remains in DB.
+    stored = db.get(ProjectDirectBinding, ids["first"])
+    assert stored.verified_campaign_count == 3
+
+
+def test_preview_requires_current_verified_binding_and_credential(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    path = preview_url(ids["org"], ids["first"])
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 409
+    put_binding(client, ids["org"], ids["first"])
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 409
+    key = set_test_agency_token(db, ids["org"])
+    calls = stub_campaign_preview(monkeypatch, key)
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 409
+    assert calls == []
+
+
+def test_preview_denies_member_stranger_cross_org_archived_or_no_session(api) -> None:
+    client, db, ids, password = api
+    path = preview_url(ids["org"], ids["first"])
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 401
+    sign_in(client, db.get(User, ids["member"]).email, password)
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 403
+    sign_in(client, db.get(User, ids["stranger"]).email, password)
+    assert client.post(path, headers={"Origin": ORIGIN}).status_code == 404
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    assert client.post(
+        preview_url(ids["other_org"], ids["other_project"]), headers={"Origin": ORIGIN}
+    ).status_code == 404
+    assert client.post(
+        preview_url(ids["org"], ids["other_project"]), headers={"Origin": ORIGIN}
+    ).status_code == 404
+    assert client.post(
+        preview_url(ids["org"], ids["archived"]), headers={"Origin": ORIGIN}
+    ).status_code == 409
+
+
+def test_preview_denies_missing_or_foreign_origin_before_api_call(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    calls = stub_campaign_preview(monkeypatch, key)
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert client.post(preview_url(ids["org"], ids["first"]), headers=headers).status_code == 403
+    assert calls == []
+
+
+def test_preview_denies_stale_verification_before_network(api, monkeypatch) -> None:
+    from datetime import timedelta
+
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    calls = stub_campaign_preview(monkeypatch, key)
+    record = db.get(ProjectDirectBinding, ids["first"])
+    record.verified_at -= timedelta(hours=25)
+    db.commit()
+    assert client.post(
+        preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN}
+    ).status_code == 409
+    assert calls == []
+
+
+def test_preview_rejects_invalid_provider_campaign_shapes(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    for item in (
+        {"Id": True, "Name": "Boolean id"},
+        {"Id": 0, "Name": "Zero id"},
+        {"Id": 1, "Name": ""},
+        {"Id": 1, "Name": "x" * 256},
+        {"Id": 1, "Name": None},
+    ):
+        stub_campaign_preview(monkeypatch, key, rows=[item])
+        result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+        assert result.status_code == 502
+        assert "FAKE-NOT-REAL" not in result.text
+
+
+def test_preview_refuses_unbounded_number_of_campaigns(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    rows = [{"Id": index + 1, "Name": "Fake"} for index in range(1001)]
+    stub_campaign_preview(monkeypatch, key, rows=rows)
+    result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert result.status_code == 502
+    assert "limit" in result.text
+
+
+def test_preview_returns_redacted_provider_failures(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key, error=58)
+    result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert result.status_code == 502
+    assert "58" in result.text
+    assert "never print secret" not in result.text
+    assert "FAKE-NOT-REAL" not in result.text
+
+
+def test_preview_cannot_return_campaigns_if_binding_changed_during_fetch(api, monkeypatch) -> None:
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    def switch_login() -> None:
+        binding = db.get(ProjectDirectBinding, ids["first"])
+        binding.client_login = "different-client"
+        binding.verified_at = None
+        binding.verified_token_revision = None
+        db.commit()
+    calls = stub_campaign_preview(monkeypatch, key, on_fetch=switch_login)
+    result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert result.status_code == 409
+    assert calls == ["client-example"]
+    assert "Alpha" not in result.text
+
+
+def test_preview_denies_key_error_without_credential_or_campaign_leak(api, monkeypatch) -> None:
+    from mako_intelligence.api.routes import direct_campaigns
+    from mako_intelligence.integrations.direct_vault import DirectVaultError
+
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    def missing_key():
+        raise DirectVaultError("No key")
+    monkeypatch.setattr(direct_campaigns, "load_vault_key", missing_key)
+    result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert result.status_code == 503
+    assert "FAKE-NOT-REAL" not in result.text

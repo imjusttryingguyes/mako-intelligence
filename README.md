@@ -1,6 +1,6 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–C2.2a complete. C2.2b1: encrypted local agency token and read-only account verification.**
+**Milestones A–C2.2b1 complete. C2.2b3a: manual campaign inventory preview (no campaign storage).**
 
 This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data or paid AI is connected. C1 includes a restricted read-only provider client. C2.2b1 adds optional **local-only encrypted** agency token storage, initialized and imported by explicit user action; the token is never accepted by a web form or committed to GitHub. Do not expose it publicly.
 
@@ -185,6 +185,35 @@ inside Yandex OAuth. For full revocation, also revoke it in Yandex.
 
 See `docs/DIRECT_VAULT_C22B1.md` for limitations, rollback risks, secrets
 lifecycle and troubleshooting.
+
+## C2.2b3a — manual read-only campaign preview
+
+No database migration or new token needed. Update from `main` and rebuild:
+
+```powershell
+git pull
+docker compose up --build -d
+```
+
+Open `http://localhost:3000` and sign in as an organization owner/admin.
+Expand **Настроить Яндекс Директ** on an active project whose advertiser
+was successfully verified within the last 24 hours. Click **Показать кампании**.
+MAKO will retrieve the advertiser's campaign IDs/names **once on demand**
+and display a searchable, 25-items-per-page list. For older verification,
+click **Проверить доступ к Директу** first.
+
+The preview is ephemeral: no campaign names/IDs are persisted in PostgreSQL
+or automatically synchronized, and the backend sends `Cache-Control: no-store`.
+The UI discards the list when the project settings component unmounts.
+The API only exposes up to 1000 validated campaign rows and requires an active
+project, verified owner/admin MAKO session and exact frontend Origin.
+
+A security fix in this patch also invalidates last-verified metadata after
+**any agency OAuth token import, replacement or local removal**. This prevents
+a deleted-and-reimported token with revision reset from inheriting old account
+verification. Token lifecycle remains manual in local Docker.
+
+See `docs/DIRECT_CAMPAIGN_PREVIEW_C22B3A.md`. No production deployment yet.
 
 ## Tests
 ```bash

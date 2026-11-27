@@ -81,14 +81,14 @@
 - [x] Add deterministic PostgreSQL and HTTP tests (no Yandex calls).
 - [x] CI green, PR merged and local migration verified by owner (2026-11-27).
 
-#### C2.2b1 — Local manual OAuth token vault + verified account [IN PROGRESS]
+#### C2.2b1 — Local manual OAuth token vault + verified account [COMPLETE]
 - [x] Build authenticated AES-256-GCM vault, key in separate local Docker volume.
 - [x] Add one encrypted agency credential per organization, shared by its projects.
 - [x] Import, rotate and remove token from local CLI after MAKO owner/admin password check.
 - [x] Add an owner/admin on-demand verification button using AgencyClients.get and Campaigns.get.
 - [x] Show campaign count and timestamp of latest success; do not promise continuous connectivity.
 - [x] Add offline isolation/security tests and additive migration 0005.
-- [ ] CI green and merged; local owner runs key init, token import and project verification.
+- [x] CI green and merged; owner confirmed local encrypted token import and 243 campaigns verified in UI (2026-11-27).
 
 #### C2.2b2 — Production OAuth authorization/lifecycle [NOT STARTED]
 - [x] API-approved OAuth application and local live read-only probe confirmed (2026-11-27).
@@ -97,8 +97,19 @@
 - [ ] Implement trusted revocation, rotation, backup/recovery and incident response.
 - [ ] Confirm legal/privacy/account authorization requirements before customer deployment.
 
-#### C2.2b3 — Campaign inventory [NOT STARTED]
-- [ ] Store selected advertiser's authorized campaign IDs/names with freshness, scoped to MAKO project.
+#### C2.2b3a — One-time campaign inventory preview [IN PROGRESS]
+- [x] Add authorized read-only on-demand provider request (never scheduled).
+- [x] Return validated campaign names and IDs only to owning organization admins.
+- [x] Require a recently verified advertiser and an unchanged encrypted agency credential.
+- [x] Add search and 25-item pagination in the project UI.
+- [x] Cover CSRF, multi-tenant access, malformed provider data, count caps and racing config changes.
+- [x] Clear verification state when organization token is removed/imported (avoid stale revisions).
+- [ ] GitHub CI green and merge to main.
+- [ ] Owner verifies visible campaign names/IDs locally against Direct.
+
+#### C2.2b3b — Persisted campaign inventory [LATER]
+- [ ] Store authorized campaign IDs/names with freshness and source lineage, per MAKO project.
+- [ ] Support incremental refresh, correct campaign scope and archival history.
 - [ ] Reconcile inventory against actual Yandex Direct UI.
 
 #### C2.2c — Sync and provider status [NOT STARTED]

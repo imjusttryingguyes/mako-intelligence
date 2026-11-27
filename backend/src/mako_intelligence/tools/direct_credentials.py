@@ -13,7 +13,7 @@ import getpass
 import sys
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from mako_intelligence.core.auth import verify_password
@@ -22,6 +22,7 @@ from mako_intelligence.db.models import (
     Organization,
     OrganizationDirectCredential,
     OrganizationMembership,
+    ProjectDirectBinding,
     User,
 )
 from mako_intelligence.db.session import get_engine
@@ -80,6 +81,17 @@ def import_token(db: Session, org: Organization, vault: DirectVault) -> None:
             f"Агентский доступ проверен: {len(clients)} клиентов. "
             "Токен заменён; прежние проверки проектов требуют повторения."
         )
+    # A newly imported credential after an earlier deletion may start at
+    # revision 1 again. Never reuse verification metadata from an older token.
+    db.execute(
+        update(ProjectDirectBinding)
+        .where(ProjectDirectBinding.organization_id == org.id)
+        .values(
+            verified_at=None,
+            verified_token_revision=None,
+            verified_campaign_count=None,
+        )
+    )
     db.commit()
 
 
@@ -91,6 +103,15 @@ def remove_token(db: Session, org: Organization) -> None:
     answer = input(f"Для удаления локального токена введи код организации «{org.slug}»: ").strip()
     if answer != org.slug:
         raise ValueError("Удаление отменено: код организации не совпадает")
+    db.execute(
+        update(ProjectDirectBinding)
+        .where(ProjectDirectBinding.organization_id == org.id)
+        .values(
+            verified_at=None,
+            verified_token_revision=None,
+            verified_campaign_count=None,
+        )
+    )
     db.delete(record)
     db.commit()
     print("Локальный зашифрованный токен удалён из MAKO.")

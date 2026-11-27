@@ -82,3 +82,34 @@ def test_cli_never_accepts_token_as_command_argument(monkeypatch) -> None:
     monkeypatch.setattr(direct_credentials.sys, "argv", ["direct_credentials", "import", "TOKEN"])
     with pytest.raises(SystemExit, match="no token/password arguments"):
         direct_credentials.main()
+
+
+def test_token_removal_invalidates_existing_project_verification(api, monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from mako_intelligence.db.models import Organization, ProjectDirectBinding
+    from mako_intelligence.integrations.direct_vault import DirectVault
+
+    _client, db, ids, _password = api
+    org = db.get(Organization, ids["org"])
+    project = ProjectDirectBinding(
+        organization_id=ids["org"], project_id=ids["first"],
+        client_login="fake-advertiser", verified_at=datetime.now(timezone.utc),
+        verified_token_revision=1, verified_campaign_count=12,
+    )
+    db.add(project)
+    vault = DirectVault(AESGCM.generate_key(bit_length=256))
+    db.add(OrganizationDirectCredential(
+        organization_id=ids["org"],
+        encrypted_token=vault.seal("FAKE-TOKEN", ids["org"]),
+        revision=1,
+    ))
+    db.commit()
+    monkeypatch.setattr(builtins, "input", lambda _prompt: org.slug)
+    direct_credentials.remove_token(db, org)
+    db.expire_all()
+    binding = db.get(ProjectDirectBinding, ids["first"])
+    assert binding.verified_at is None
+    assert binding.verified_token_revision is None
+    assert binding.verified_campaign_count is None
+    assert db.get(OrganizationDirectCredential, ids["org"]) is None
