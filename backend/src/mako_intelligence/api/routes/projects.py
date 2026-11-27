@@ -1,4 +1,4 @@
-"""Read-only tenant-scoped endpoints. No caller-supplied identity."""
+"""Tenant-scoped project endpoints. Never accept caller-supplied user identity."""
 from __future__ import annotations
 
 import uuid
@@ -139,6 +139,64 @@ def create_project(
         "name": project.name,
         "status": project.status,
         "actions": sorted(action.value for action in actions),
+    }
+
+
+
+class RenameProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def normalized_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("Project name cannot be blank")
+        return name
+
+
+@router.patch("/organizations/{organization_id}/projects/{project_id}")
+def rename_project(
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
+    payload: RenameProjectInput,
+    request: Request,
+    user: User = Depends(authenticated_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rename an active project. This is an org-admin metadata operation.
+
+    This endpoint never modifies the project's immutable UUID, code or tenant.
+    Project-level manager/editor roles deliberately cannot rename project identity.
+    """
+    _require_origin(request)
+    role = _organization_membership(db, user.id, organization_id)
+    if role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+
+    project = db.scalar(
+        select(Project).where(
+            Project.organization_id == organization_id, Project.id == project_id
+        )
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if project.status != "active":
+        raise HTTPException(status_code=409, detail="archived project is read-only")
+
+    project.name = payload.name
+    db.commit()
+    return {
+        "id": str(project.id),
+        "slug": project.slug,
+        "name": project.name,
+        "status": project.status,
+        "actions": sorted(
+            action.value
+            for action in project_permissions(
+                db, user_id=user.id, organization_id=organization_id, project_id=project.id
+            )
+        ),
     }
 
 
