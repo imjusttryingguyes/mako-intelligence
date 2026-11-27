@@ -26,10 +26,11 @@ from mako_intelligence.integrations.direct_vault import (
     load_vault_key,
 )
 from mako_intelligence.integrations.yandex_direct import DirectReadClient, DirectReadError
+from mako_intelligence.integrations.yandex_reports import DirectReportsClient
 
 router = APIRouter(tags=["direct-campaign-preview"])
 MAX_VERIFICATION_AGE = timedelta(hours=24)
-MAX_CAMPAIGNS = 1000
+MAX_CAMPAIGNS = 2000
 MAX_NAME_LENGTH = 255
 
 
@@ -74,6 +75,17 @@ def preview_direct_campaigns(
         token = DirectVault(load_vault_key()).open(credential.encrypted_token, organization_id)
         with DirectReadClient(token) as direct:
             provider_rows = direct.get_campaigns(client_login=login)
+        # Reports is a separate read-only API with different campaign coverage.
+        # A queued or failed report is surfaced explicitly, NOT an empty list.
+        report_status = "unavailable"
+        report_rows: list[dict] = []
+        try:
+            with DirectReportsClient(token) as reports:
+                report = reports.get_campaigns_with_statistics(client_login=login)
+            report_status = report.status
+            report_rows = report.campaigns
+        except (DirectReadError, ValueError):
+            report_status = "unavailable"
     except DirectVaultError:
         raise HTTPException(status_code=503, detail="local Direct credential unavailable") from None
     except (DirectReadError, ValueError) as exc:
@@ -89,7 +101,7 @@ def preview_direct_campaigns(
     if len(provider_rows) > MAX_CAMPAIGNS:
         raise HTTPException(status_code=502, detail="Direct campaign preview limit exceeded")
 
-    items: list[dict] = []
+    inventory: dict[int, dict] = {}
     for row in provider_rows:
         if not isinstance(row, dict):
             raise HTTPException(status_code=502, detail="Invalid Direct campaign response")
@@ -103,9 +115,30 @@ def preview_direct_campaigns(
             or len(name) > MAX_NAME_LENGTH
         ):
             raise HTTPException(status_code=502, detail="Invalid Direct campaign response")
-        items.append({"id": campaign_id, "name": name})
+        if campaign_id in inventory:
+            raise HTTPException(status_code=502, detail="Duplicate Direct campaign ID")
+        inventory[campaign_id] = {
+            "id": campaign_id, "name": name, "type": None, "source": "campaigns",
+        }
 
-    items.sort(key=lambda item: (item["name"].casefold(), item["id"]))
+    report_only = 0
+    if report_status == "ready":
+        for row in report_rows:
+            campaign_id = row["id"]
+            if campaign_id in inventory:
+                inventory[campaign_id]["source"] = "both"
+                inventory[campaign_id]["type"] = row["type"]
+            else:
+                report_only += 1
+                inventory[campaign_id] = {
+                    "id": campaign_id,
+                    "name": row["name"],
+                    "type": row["type"],
+                    "source": "reports",
+                }
+    if len(inventory) > MAX_CAMPAIGNS:
+        raise HTTPException(status_code=502, detail="Combined campaign preview limit exceeded")
+    items = sorted(inventory.values(), key=lambda item: (item["name"].casefold(), item["id"]))
 
     # User and binding can change during a slow upstream request. Recheck before
     # returning sensitive campaign names, not just before a database write.
@@ -142,6 +175,11 @@ def preview_direct_campaigns(
     db.rollback()  # Read-only: release row locks without any write.
     return {
         "count": len(items),
+        "campaigns_get_count": len(provider_rows),
+        "reports_only_count": report_only,
+        "report_status": report_status,
+        "report_period": "LAST_365_DAYS",
+        "completeness": "period_limited" if report_status == "ready" else "incomplete",
         "fetched_at": retrieved_at,
         "campaigns": items,
     }
