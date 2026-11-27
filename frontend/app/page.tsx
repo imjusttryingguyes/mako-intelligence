@@ -71,11 +71,18 @@ export default function Home() {
       return;
     }
     let active = true;
+    // Never display projects from the previously selected organization while loading.
+    setProjects([]);
     setLoadingProjects(true);
     setError("");
     void getJSON<Project[]>(`/organizations/${organizationId}/projects`)
       .then((data) => { if (active) setProjects(data); })
-      .catch(() => { if (active) setError("Не удалось получить список проектов."); })
+      .catch(() => {
+        if (active) {
+          setProjects([]);
+          setError("Не удалось получить список проектов.");
+        }
+      })
       .finally(() => { if (active) setLoadingProjects(false); });
     return () => { active = false; };
   }, [view, organizationId]);
