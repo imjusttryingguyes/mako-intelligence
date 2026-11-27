@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from mako.api.routes.health import router as health_router
-from mako.core.config import frontend_origin
+from mako_intelligence.api.routes.health import router as health_router
+from mako_intelligence.core.config import frontend_origin
 
 app = FastAPI(
     title="MAKO Intelligence API",

@@ -1,8 +1,8 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestone A: free, local-first development foundation.**
+**Milestone A complete; Milestone B1: database schema and migrations.**
 
-This is a **technical scaffold, not a production application**. There is no login, multi-tenant authorization, Yandex OAuth, real advertising data, or paid AI integration yet. Do not deploy publicly.
+This is a **technical scaffold, not a production application**. B1 adds database tables for organizations, projects, users and memberships. **There is no authentication or tenant-safe HTTP API yet**, nor Yandex OAuth, real advertising data or paid AI. Do not deploy publicly.
 
 ## Requirements
 - Git
@@ -28,6 +28,17 @@ Stop containers: `docker compose down`. **CAUTION:** `docker compose down -v` de
 
 The sample password is **only for local development** and MUST be changed before any server deployment. No customer data should ever be placed in this scaffold.
 
+## Database migrations (Milestone B1)
+After `git pull`, rebuild and apply the first additive migration, keeping the existing PostgreSQL volume:
+
+```powershell
+docker compose up --build -d
+docker compose exec backend alembic -c /app/alembic.ini upgrade head
+docker compose exec backend alembic -c /app/alembic.ini current
+```
+
+See `docs/SCHEMA_B1.md` for the table design and security caveats. **Do not run `docker compose down -v`**: this deletes your local database.
+
 ## Tests
 ```bash
 python -m pip install -e './backend[dev]'
@@ -50,7 +61,7 @@ The page displays `API недоступен` when the backend is off. This is ex
 
 ## Architecture
 - `frontend/`: Next.js UI and backend status.
-- `backend/`: FastAPI liveness, readiness and deterministic metric calculations.
+- `backend/`: FastAPI liveness, readiness, deterministic metrics, ORM tenant models, Alembic migrations.
 - `compose.yaml`: PostgreSQL, backend, frontend; ports exposed **only to localhost**.
 - `.github/workflows/ci.yml`: read-only public GitHub Actions, no production secrets.
 - `docs/`: roadmap, cost-first decision, product brief.
