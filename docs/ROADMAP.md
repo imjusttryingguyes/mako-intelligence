@@ -14,7 +14,7 @@
 - [x] Initial ORM model and Alembic migration: organizations, users, organization memberships, projects, project memberships.
 - [x] Referential integrity across organization and project memberships.
 - [x] Integration tests using disposable PostgreSQL in GitHub Actions.
-- [ ] CI is green after PR.
+- [x] CI is green after PR (13 tests, schema migration and Alembic drift check).
 - [ ] Apply first migration to owner's local Docker environment.
 
 ### B2 — Authentication and access [NOT STARTED]
