@@ -1097,7 +1097,20 @@ def stub_campaign_preview(monkeypatch, key, *, rows=None, error=None, on_fetch=N
                 raise DirectReadError("never print secret", error_code=error)
             return rows
 
+    class FakeReports:
+        def __init__(self, token):
+            assert token == "FAKE-NOT-REAL"
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get_campaigns_with_statistics(self, *, client_login):
+            assert client_login == "client-example"
+            from mako_intelligence.integrations.yandex_reports import CampaignReport
+            return CampaignReport(status="ready", campaigns=[])
+
     monkeypatch.setattr(direct_campaigns, "DirectReadClient", FakeDirect)
+    monkeypatch.setattr(direct_campaigns, "DirectReportsClient", FakeReports)
     monkeypatch.setattr(direct_campaigns, "load_vault_key", lambda: key)
     return calls
 
@@ -1236,3 +1249,112 @@ def test_preview_denies_key_error_without_credential_or_campaign_leak(api, monke
     result = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
     assert result.status_code == 503
     assert "FAKE-NOT-REAL" not in result.text
+
+
+def stub_reports(monkeypatch, *, status="ready", rows=None, error=None):
+    from mako_intelligence.api.routes import direct_campaigns
+    from mako_intelligence.integrations.yandex_direct import DirectReadError
+    from mako_intelligence.integrations.yandex_reports import CampaignReport
+
+    calls = []
+    class FakeReports:
+        def __init__(self, token):
+            assert token == "FAKE-NOT-REAL"
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get_campaigns_with_statistics(self, *, client_login):
+            calls.append(client_login)
+            if error is not None:
+                raise DirectReadError("sensitive upstream error", error_code=error)
+            return CampaignReport(status=status, campaigns=rows or [])
+
+    monkeypatch.setattr(direct_campaigns, "DirectReportsClient", FakeReports)
+    return calls
+
+
+def test_preview_reconciles_management_and_product_campaigns_from_report(api, monkeypatch):
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key)
+    calls = stub_reports(monkeypatch, rows=[
+        {"id": 11, "name": "Alpha", "type": "TEXT_CAMPAIGN"},
+        {"id": 678, "name": "Товарная кампания", "type": "CAMPAIGN_MASTER"},
+        {"id": 679, "name": "Каталог", "type": "CAMPAIGN_MASTER"},
+    ])
+    response = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 5
+    assert payload["campaigns_get_count"] == 3
+    assert payload["reports_only_count"] == 2
+    assert payload["report_status"] == "ready"
+    assert payload["completeness"] == "period_limited"
+    assert payload["report_period"] == "LAST_365_DAYS"
+    by_id = {row["id"]: row for row in payload["campaigns"]}
+    assert by_id[11]["source"] == "both"
+    assert by_id[678]["source"] == "reports"
+    assert by_id[678]["name"] == "Товарная кампания"
+    assert by_id[678]["type"] == "CAMPAIGN_MASTER"
+    assert calls == ["client-example"]
+    assert db.get(ProjectDirectBinding, ids["first"]).verified_campaign_count == 3
+    assert "FAKE-NOT-REAL" not in response.text
+
+
+@pytest.mark.parametrize("status", ["pending", "unavailable"])
+def test_preview_never_silently_treats_pending_reports_as_complete(api, monkeypatch, status):
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key)
+    if status == "pending":
+        stub_reports(monkeypatch, status="pending")
+    else:
+        stub_reports(monkeypatch, error=429)
+    response = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 3
+    assert payload["reports_only_count"] == 0
+    assert payload["report_status"] == status
+    assert payload["completeness"] == "incomplete"
+
+
+def test_preview_merges_same_id_without_double_counting_even_if_names_differ(api, monkeypatch):
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key)
+    stub_reports(monkeypatch, rows=[
+        {"id": 11, "name": "Previous Alpha name", "type": "UNIFIED_CAMPAIGN"},
+    ])
+    response = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["count"] == 3
+    row = next(item for item in result["campaigns"] if item["id"] == 11)
+    assert row["name"] == "Alpha"
+    assert row["source"] == "both"
+    assert row["type"] == "UNIFIED_CAMPAIGN"
+
+
+def test_preview_does_not_call_report_when_access_denied(api, monkeypatch):
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key)
+    calls = stub_reports(monkeypatch, rows=[
+        {"id": 999, "name": "Secret", "type": "CAMPAIGN_MASTER"},
+    ])
+    assert client.post(
+        preview_url(ids["org"], ids["first"]),
+        headers={"Origin": "https://attacker.example"},
+    ).status_code == 403
+    assert calls == []
+
+
+def test_preview_reports_unavailable_if_excessive_total_campaigns(api, monkeypatch):
+    client, db, ids, key = prepare_verified_preview(api, monkeypatch)
+    stub_campaign_preview(monkeypatch, key)
+    rows = [
+        {"id": index + 10000, "name": "Sample", "type": "CAMPAIGN_MASTER"}
+        for index in range(2100)
+    ]
+    stub_reports(monkeypatch, rows=rows)
+    response = client.post(preview_url(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 502
+    assert "limit" in response.text

@@ -31,6 +31,7 @@ from mako_intelligence.integrations.yandex_reports import DirectReportsClient
 router = APIRouter(tags=["direct-campaign-preview"])
 MAX_VERIFICATION_AGE = timedelta(hours=24)
 MAX_CAMPAIGNS = 2000
+MAX_MANAGED_CAMPAIGNS = 1000
 MAX_NAME_LENGTH = 255
 
 
@@ -98,7 +99,7 @@ def preview_direct_campaigns(
             status_code=502, detail=f"Yandex Direct read-only request failed{code}"
         ) from None
 
-    if len(provider_rows) > MAX_CAMPAIGNS:
+    if len(provider_rows) > MAX_MANAGED_CAMPAIGNS:
         raise HTTPException(status_code=502, detail="Direct campaign preview limit exceeded")
 
     inventory: dict[int, dict] = {}
