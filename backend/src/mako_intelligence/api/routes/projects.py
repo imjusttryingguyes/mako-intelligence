@@ -332,6 +332,8 @@ def project_history(
             "new_name": event.new_name,
             "old_status": event.old_status,
             "new_status": event.new_status,
+            "old_client_login": event.old_client_login,
+            "new_client_login": event.new_client_login,
             "created_at": event.created_at.isoformat(),
         }
         for event, actor_name in db.execute(stmt)
