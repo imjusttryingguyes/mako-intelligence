@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import DirectBindingPanel from "./components/DirectBindingPanel";
 
 type View = "loading" | "login" | "dashboard";
 type User = { id: string; email: string; display_name: string };
@@ -14,12 +15,14 @@ type Project = {
 };
 type ProjectChange = {
   id: string;
-  action: "rename" | "archive" | "restore";
+  action: "rename" | "archive" | "restore" | "direct_bind" | "direct_unbind";
   actor: string;
   old_name: string | null;
   new_name: string | null;
   old_status: string | null;
   new_status: string | null;
+  old_client_login: string | null;
+  new_client_login: string | null;
   created_at: string;
 };
 type PendingStatusChange = {
@@ -399,7 +402,7 @@ export default function Home() {
           <span className="brand-light">INTELLIGENCE</span>
         </div>
         <div className="header-right">
-          <span className="version">CORE / B2.4b</span>
+          <span className="version">CORE / C2.2a</span>
           {view === "dashboard" && (
             <button className="button button-quiet" disabled={busy} onClick={signOut}>
               Выйти
@@ -662,6 +665,19 @@ export default function Home() {
                   </div>
                 )}
                 {canCreate && (
+                  <DirectBindingPanel
+                    key={`${organizationId}:${project.id}`}
+                    organizationId={organizationId}
+                    projectId={project.id}
+                    archived={project.status === "archived"}
+                    onChanged={() => {
+                      historyRequest.current += 1;
+                      setHistoryContext(null);
+                      setHistoryEvents([]);
+                    }}
+                  />
+                )}
+                {canCreate && (
                   <div className="project-status-section">
                     <div className="project-status-actions">
                       <button
@@ -740,7 +756,14 @@ export default function Home() {
                               {event.action === "rename"
                                 ? `Переименование: ${event.old_name} → ${event.new_name}`
                                 : event.action === "archive"
-                                  ? "Перенесён в архив" : "Восстановлен из архива"}
+                                  ? "Перенесён в архив"
+                                  : event.action === "restore"
+                                    ? "Восстановлен из архива"
+                                    : event.action === "direct_bind"
+                                      ? `Логин Директа: ${event.old_client_login ?? "не указан"} → ${event.new_client_login}`
+                                      : event.action === "direct_unbind"
+                                        ? `Логин Директа отвязан: ${event.old_client_login}`
+                                        : "Изменение проекта"}
                             </strong>
                             <span>
                               {event.actor} · {new Date(event.created_at).toLocaleString("ru-RU")}
@@ -758,7 +781,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer>MAKO Intelligence · B2.4b · Только локальная разработка</footer>
+      <footer>MAKO Intelligence · C2.2a · Только локальная разработка</footer>
     </main>
   );
 }
