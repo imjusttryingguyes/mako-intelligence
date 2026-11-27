@@ -19,7 +19,11 @@ _ALLOWED_LOGIN = re.compile(r"[a-zA-Z0-9._@-]{1,255}\Z")
 
 
 class DirectReadError(Exception):
-    """Safe-to-display error: never includes OAuth tokens or raw response bodies."""
+    """Safe-to-display provider error, retaining only an optional numeric code."""
+
+    def __init__(self, message: str, *, error_code: int | None = None) -> None:
+        super().__init__(message)
+        self.error_code = error_code
 
 
 class DirectReadClient:
@@ -99,8 +103,11 @@ class DirectReadClient:
         if "error" in data:
             raw_error = data["error"]
             code = raw_error.get("error_code") if isinstance(raw_error, dict) else None
-            code_info = f", code {code}" if isinstance(code, int) else ""
-            raise DirectReadError(f"Direct API rejected the request{code_info}")
+            safe_code = code if type(code) is int else None
+            code_info = f", code {safe_code}" if safe_code is not None else ""
+            raise DirectReadError(
+                f"Direct API rejected the request{code_info}", error_code=safe_code
+            )
         result = data.get("result")
         if not isinstance(result, dict) or not isinstance(result.get(result_field), list):
             raise DirectReadError("Direct API returned unexpected result structure")

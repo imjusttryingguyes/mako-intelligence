@@ -237,3 +237,18 @@ def test_client_does_not_close_injected_http_transport() -> None:
         with DirectReadClient("fake-token", http_client=http) as direct:
             assert direct.get_campaigns() == []
         assert not http.is_closed
+
+
+def test_error_58_exposes_only_numeric_code_not_server_body() -> None:
+    token = "non-public-test-token"
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "error": {"error_code": 58, "error_detail": f"LEAK-{token}"},
+        })
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(DirectReadError) as error:
+            DirectReadClient(token, http_client=http).get_agency_clients()
+    assert error.value.error_code == 58
+    assert "58" in str(error.value)
+    assert token not in str(error.value)
+    assert "LEAK" not in str(error.value)

@@ -81,3 +81,22 @@ Do not brute-force requests: quotas and Yandex rate limits apply.
 Zero incremental infrastructure cost. Real Yandex Direct API access is
 free, but quota-limited; no live calls occur until the user manually
 runs the optional probe with an authorized token.
+
+## Troubleshooting: code 58, approved app and token visibility
+
+**Error 58 = incomplete OAuth application registration for Direct API.**
+If the access request is approved, verify that the token was generated
+for the **same OAuth Client ID** listed in the approved application request.
+A token from another app does not inherit this application's approval.
+Official reference: https://yandex.ru/dev/direct/doc/ru/concepts/errors-list
+
+After running the probe, select input mode:
+- `2` or Enter: hidden prompt (default); it shows a **character count** after pasting.
+- `1`: visibly echo the token in your local terminal when explicitly needed.
+  **This exposes the token** in terminal scrollback and screenshots; close the
+  terminal afterward and do not share screenshots containing it.
+
+The probe also prints the method being checked before calling it:
+AgencyClients.get first for agency mode, then Campaigns.get.
+When the error is 58, the probe prints a safe, actionable explanation
+without echoing token, upstream errors, response body or client names.
