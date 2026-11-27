@@ -335,3 +335,106 @@ def test_same_slug_is_allowed_in_different_organizations(api) -> None:
     assert client.get(
         f"/organizations/{ids['org']}/projects/{first.json()['id']}"
     ).status_code == 404
+
+
+def rename_request(
+    client: TestClient,
+    org: uuid.UUID,
+    project: uuid.UUID,
+    name: str = "  Новое название  ",
+    headers: dict[str, str] | None = None,
+):
+    return client.patch(
+        f"/organizations/{org}/projects/{project}",
+        json={"name": name},
+        headers={"Origin": ORIGIN} if headers is None else headers,
+    )
+
+
+def test_owner_can_rename_existing_project_without_changing_code_or_id(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    response = rename_request(client, ids["org"], ids["first"])
+    assert response.status_code == 200
+    assert response.json()["name"] == "Новое название"
+    assert response.json()["id"] == str(ids["first"])
+    assert response.json()["slug"] == "first"
+    assert db.get(Project, ids["first"]).name == "Новое название"
+    assert client.get(f"/organizations/{ids['org']}/projects/{ids['first']}").json()[
+        "name"
+    ] == "Новое название"
+
+
+def test_admin_can_rename_existing_active_project(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(OrganizationMembership, (ids["org"], ids["member"]))
+    membership.role = "admin"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    assert rename_request(client, ids["org"], ids["second"], "Admin rename").status_code == 200
+
+
+def test_project_manager_cannot_rename_identity_metadata(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(ProjectMembership, (ids["first"], ids["member"]))
+    membership.role = "manager"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    assert rename_request(client, ids["org"], ids["first"]).status_code == 403
+    assert db.get(Project, ids["first"]).name == "First"
+
+
+def test_cross_org_rename_is_nondisclosing_not_found(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert rename_request(client, ids["other_org"], ids["other_project"]).status_code == 404
+    assert rename_request(client, ids["org"], ids["other_project"]).status_code == 404
+    assert rename_request(client, ids["org"], uuid.uuid4()).status_code == 404
+
+
+def test_unauthenticated_project_rename_is_denied(api) -> None:
+    client, _db, ids, _password = api
+    assert rename_request(client, ids["org"], ids["first"]).status_code == 401
+
+
+def test_project_rename_requires_exact_origin(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert rename_request(
+            client, ids["org"], ids["first"], headers=headers
+        ).status_code == 403
+    assert db.get(Project, ids["first"]).name == "First"
+
+
+def test_archived_project_cannot_be_renamed_even_by_owner(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert rename_request(client, ids["org"], ids["archived"]).status_code == 409
+    assert db.get(Project, ids["archived"]).name == "Archived"
+
+
+def test_project_rename_rejects_invalid_names(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for name in ("", "  ", "x" * 201):
+        assert rename_request(client, ids["org"], ids["first"], name).status_code == 422
+    assert db.get(Project, ids["first"]).name == "First"
+
+
+def test_project_rename_preflight_allows_only_local_origin(api) -> None:
+    client, _db, ids, _password = api
+    url = f"/organizations/{ids['org']}/projects/{ids['first']}"
+    allowed = client.options(url, headers={
+        "Origin": ORIGIN,
+        "Access-Control-Request-Method": "PATCH",
+        "Access-Control-Request-Headers": "content-type",
+    })
+    assert allowed.status_code == 200
+    assert allowed.headers.get("access-control-allow-origin") == ORIGIN
+    assert "PATCH" in allowed.headers.get("access-control-allow-methods", "")
+    denied = client.options(url, headers={
+        "Origin": "https://attacker.example",
+        "Access-Control-Request-Method": "PATCH",
+    })
+    assert denied.headers.get("access-control-allow-origin") is None

@@ -32,17 +32,26 @@
 - [x] Local bootstrap, login and demonstration project verified by owner (2026-11-27).
 - [x] Test unauthorized, cross-organization, archived and missing-project access.
 
-### B2.3 — Create real empty projects [IN PROGRESS]
+### B2.3 — Create real empty projects [COMPLETE]
 - [x] Add POST project API restricted to verified organization owners/admins with Origin check.
 - [x] Validate normalized project name and per-organization unique slug; return 409 for duplicates.
 - [x] Add a project creation form in the local dashboard.
 - [x] Add integration tests for unauthorized members, outsiders, CSRF, validation and duplicate codes.
-- [ ] Final CI green and merged to main.
-- [ ] Owner creates and sees a new empty project in the local app.
+- [x] Final CI green and merged to main (56 tests, frontend build).
+- [x] Owner confirmed local creation and display of a new project (2026-11-27).
 
-### B2.4 — Project management (later)
-- Rename, archive and restore projects using verified permissions and audit trail.
-- Add project settings (no advertising data yet).
+### B2.4a — Rename active projects [IN PROGRESS]
+- [x] Allow organization owner/admin to rename an active project via PATCH.
+- [x] Preserve project UUID, code and organization; reject unauthorized/archived changes.
+- [x] Add a simple "Переименовать" form on active project cards.
+- [x] Add integration tests for forbidden access, Origin checks and invalid names.
+- [ ] Final CI green and merged to main.
+- [ ] Owner verifies rename via VS Code.
+
+### B2.4b — Archive/restore and audit history [LATER]
+- Non-destructive archive and restore with safe confirmations.
+- Immutable history of project metadata changes and actor identity.
+- Project settings beyond display name (no advertising data yet).
 
 ## C — Read-only Yandex connector
 - Confirm API requirements and permissions.

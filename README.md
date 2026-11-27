@@ -1,6 +1,6 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–B2.2 complete. B2.3: create empty projects in the local dashboard.**
+**Milestones A–B2.3 complete. B2.4a: rename active projects in the local dashboard.**
 
 This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
 
@@ -59,6 +59,15 @@ both values and enforces uniqueness within each organization.
 A new project is an **empty record**; no advertising connection or client data is created.
 Project members and outsiders cannot use the creation endpoint.
 No migration is necessary for B2.3. Existing demo project and credentials are preserved.
+
+## B2.4a project renaming
+After `git pull` and `docker compose up --build -d`, open the dashboard.
+Organization owners and admins can choose **Переименовать** on active project
+cards. Edit and save the display name; project UUID, URL-friendly code, project
+membership and organization stay unchanged. Archived projects are read-only.
+The backend requires a valid session and matching frontend Origin on PATCH,
+and denies access to normal members and users from different organizations.
+This increment adds **no database migration**. Do not use real client data yet.
 
 ## Tests
 ```bash

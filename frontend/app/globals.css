@@ -114,3 +114,26 @@ footer {padding:28px 0;border-top:1px solid var(--border);color:#71849b;font-siz
   .create-panel {padding:20px;}
   .project-header-actions {gap:10px;}
 }
+
+.project-settings {
+  margin-top:13px;
+  padding-top:13px;
+  border-top:1px solid var(--border);
+}
+.project-settings .field-label { margin:0 0 9px; }
+.project-settings .error-message { margin-top:11px; }
+.project-settings-link {
+  color:var(--accent);
+  border:none;
+  background:transparent;
+  cursor:pointer;
+  font:inherit;
+  font-size:12px;
+  padding:6px 0;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+.project-settings-link:disabled {opacity:.45;cursor:not-allowed;}
+.project-settings-link:focus-visible {outline:2px solid var(--accent);outline-offset:4px;}
+.project-settings-actions {display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;}
+.project-settings-actions .button {margin:0;padding:10px 12px;}
