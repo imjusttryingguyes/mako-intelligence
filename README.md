@@ -1,6 +1,6 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–B2.3 complete. B2.4a: rename active projects in the local dashboard.**
+**Milestones A–B2.4a complete. B2.4b: reversible project archive and audit history.**
 
 This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
 
@@ -68,6 +68,27 @@ membership and organization stay unchanged. Archived projects are read-only.
 The backend requires a valid session and matching frontend Origin on PATCH,
 and denies access to normal members and users from different organizations.
 This increment adds **no database migration**. Do not use real client data yet.
+
+## B2.4b archive/restore and history
+After `git pull`, rebuild, then **apply additive migration 0003**:
+
+```powershell
+docker compose up --build -d
+docker compose exec backend alembic -c /app/alembic.ini upgrade head
+docker compose exec backend alembic -c /app/alembic.ini current
+```
+
+Expect `0003_project_events (head)`. Organization owners/admins can archive or
+restore projects using a two-step confirmation on each card. Archived projects
+stay visible but are read-only; nothing is deleted. An **История** link displays
+the last 100 rename/archive/restore actions with actor and timestamp.
+History starts **after installing migration 0003**; old renames cannot be
+reconstructed retroactively.
+
+The PostgreSQL audit table blocks row UPDATE and DELETE through a trigger.
+This is suitable for local development, not a tamper-proof production audit
+because a privileged database administrator can change database triggers.
+Never use `docker compose down -v` to stop the app. No customer data yet.
 
 ## Tests
 ```bash

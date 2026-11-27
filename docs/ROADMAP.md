@@ -40,18 +40,27 @@
 - [x] Final CI green and merged to main (56 tests, frontend build).
 - [x] Owner confirmed local creation and display of a new project (2026-11-27).
 
-### B2.4a — Rename active projects [IN PROGRESS]
+### B2.4a — Rename active projects [COMPLETE]
 - [x] Allow organization owner/admin to rename an active project via PATCH.
 - [x] Preserve project UUID, code and organization; reject unauthorized/archived changes.
 - [x] Add a simple "Переименовать" form on active project cards.
 - [x] Add integration tests for forbidden access, Origin checks and invalid names.
-- [ ] Final CI green and merged to main.
-- [ ] Owner verifies rename via VS Code.
+- [x] Final CI green and merged to main.
+- [x] Owner verified rename via VS Code (2026-11-27).
 
-### B2.4b — Archive/restore and audit history [LATER]
-- Non-destructive archive and restore with safe confirmations.
-- Immutable history of project metadata changes and actor identity.
-- Project settings beyond display name (no advertising data yet).
+### B2.4b — Archive/restore and change audit [IN PROGRESS]
+- [x] Reversible archive/restore restricted to organization owner/admin.
+- [x] Additive event table and database trigger denying audit-row rewrites/deletes.
+- [x] Record actor and before/after values atomically for rename/archive/restore.
+- [x] Tenant-scoped history API and inline project timeline.
+- [x] UI confirmation before status changes; no delete actions.
+- [x] Integration tests for permissions, CSRF and audit append-only constraints.
+- [ ] CI green and changes merged into main.
+- [ ] Owner applies migration 0003 and verifies archive/restore/history locally.
+
+### B2.4c — Further project settings [LATER]
+- Detailed settings (no advertising data yet).
+- Production audit hardening: separate DB roles, backups and integrity verification.
 
 ## C — Read-only Yandex connector
 - Confirm API requirements and permissions.

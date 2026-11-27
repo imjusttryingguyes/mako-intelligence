@@ -137,3 +137,20 @@ footer {padding:28px 0;border-top:1px solid var(--border);color:#71849b;font-siz
 .project-settings-link:focus-visible {outline:2px solid var(--accent);outline-offset:4px;}
 .project-settings-actions {display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;}
 .project-settings-actions .button {margin:0;padding:10px 12px;}
+
+.project-status-section {
+  margin-top:13px; padding-top:13px; border-top:1px solid var(--border);
+}
+.project-status-actions { display:flex; flex-wrap:wrap; gap:18px; align-items:center; }
+.archive-link { color:#d5a899; }
+.confirmation-panel {
+  margin-top:14px;padding:15px;border:1px solid #52677a;
+  border-radius:11px;background:#1a293b;
+}
+.confirmation-panel p { margin:0 0 12px;font-size:12px;color:#d8e3ef; }
+.confirmation-panel .error-message {margin-top:8px;}
+.history-panel {margin-top:14px;padding:16px;border:1px solid var(--border);border-radius:12px;background:#0b1420;}
+.history-panel .eyebrow {font-size:10px;}
+.history-entry {display:flex;flex-direction:column;gap:5px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);overflow-wrap:anywhere;}
+.history-entry strong {font-weight:600;font-size:12px;line-height:1.45;}
+.history-entry span {color:var(--muted);font-size:11px;}
