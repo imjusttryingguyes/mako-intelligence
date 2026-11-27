@@ -163,3 +163,44 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
+
+
+class ProjectEvent(Base):
+    """Append-only history of local project metadata changes.
+
+    Database migration also creates a trigger denying UPDATE or DELETE.
+    This table is an initial operational audit, not yet a production audit solution.
+    """
+
+    __tablename__ = "project_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "project_id"],
+            ["projects.organization_id", "projects.id"],
+            name="fk_project_events_project_org",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "action IN ('rename', 'archive', 'restore')",
+            name="ck_project_events_action",
+        ),
+        Index("ix_project_events_org_project_created", "organization_id", "project_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False,
+    )
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    old_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    new_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    old_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    new_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
