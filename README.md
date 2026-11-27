@@ -1,8 +1,8 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestone A complete; Milestone B1: database schema and migrations.**
+**Milestone A / B1 / B2.1 complete. B2.2: local-only login and protected project list.**
 
-This is a **technical scaffold, not a production application**. B1 adds database tables for organizations, projects, users and memberships. **There is no authentication or tenant-safe HTTP API yet**, nor Yandex OAuth, real advertising data or paid AI. Do not deploy publicly.
+This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Read-only organization and project APIs use verified sessions and the B2.1 tenant access rules. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
 
 ## Requirements
 - Git
@@ -38,6 +38,17 @@ docker compose exec backend alembic -c /app/alembic.ini current
 ```
 
 See `docs/SCHEMA_B1.md` for the table design and security caveats. **Do not run `docker compose down -v`**: this deletes your local database.
+
+## B2.2 local owner and first login (after pulling changes)
+
+```powershell
+git pull
+docker compose up --build -d
+docker compose exec backend alembic -c /app/alembic.ini upgrade head
+docker compose exec backend python -m mako_intelligence.tools.bootstrap_local_owner
+```
+
+The bootstrap prompts interactively for an email, display name and password twice (password is not echoed). It refuses if any organization or user already exists; it creates one owner, MAKO organization and an empty demo project. Open `http://localhost:3000` and log in. **Never type the password into a command argument, screenshot, GitHub issue or chat.** See `docs/AUTH_B2.md`.
 
 ## Tests
 ```bash

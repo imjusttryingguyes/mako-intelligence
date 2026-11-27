@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MAKO Intelligence · Core 0.1",
-  description: "Локальный каркас MAKO Intelligence — без рекламных данных и платных API.",
+  title: "MAKO Intelligence · Рабочее пространство",
+  description: "Локальный кабинет MAKO Intelligence — без реальных рекламных данных.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
