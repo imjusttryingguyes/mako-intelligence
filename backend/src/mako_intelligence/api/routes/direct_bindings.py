@@ -15,7 +15,13 @@ from sqlalchemy.orm import Session
 
 from mako_intelligence.api.routes.auth import _require_origin, authenticated_user
 from mako_intelligence.api.routes.projects import _organization_membership
-from mako_intelligence.db.models import Project, ProjectDirectBinding, ProjectEvent, User
+from mako_intelligence.db.models import (
+    OrganizationDirectCredential,
+    Project,
+    ProjectDirectBinding,
+    ProjectEvent,
+    User,
+)
 from mako_intelligence.db.session import get_db
 
 router = APIRouter(tags=["direct-bindings"])
@@ -54,11 +60,26 @@ def _project_for_admin(
     return project
 
 
-def _binding_view(binding: ProjectDirectBinding | None) -> dict:
+def _binding_view(
+    binding: ProjectDirectBinding | None,
+    credential: OrganizationDirectCredential | None,
+) -> dict:
+    verified = (
+        binding is not None
+        and credential is not None
+        and binding.verified_at is not None
+        and binding.verified_token_revision == credential.revision
+    )
     return {
         "provider": "yandex_direct",
         "client_login": binding.client_login if binding is not None else None,
-        "status": "configured_unverified" if binding is not None else "not_configured",
+        "status": (
+            "not_configured" if binding is None else
+            "verified_at_time" if verified else "configured_unverified"
+        ),
+        "credential_available": credential is not None,
+        "last_verified_at": binding.verified_at.isoformat() if verified else None,
+        "campaign_count": binding.verified_campaign_count if verified else None,
     }
 
 
@@ -75,7 +96,7 @@ def read_binding(
     binding = db.get(ProjectDirectBinding, project_id)
     if binding is not None and binding.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="not found")
-    return _binding_view(binding)
+    return _binding_view(binding, db.get(OrganizationDirectCredential, organization_id))
 
 
 @router.put("/organizations/{organization_id}/projects/{project_id}/direct-binding")
@@ -113,6 +134,9 @@ def save_binding(
             binding.client_login = payload.client_login
             binding.status = "configured_unverified"
             binding.updated_at = datetime.now(timezone.utc)
+            binding.verified_at = None
+            binding.verified_token_revision = None
+            binding.verified_campaign_count = None
 
         # Does not create a connection or authorize a client. Audited metadata only.
         db.add(ProjectEvent(
@@ -122,7 +146,7 @@ def save_binding(
         ))
         db.commit()
 
-    return _binding_view(binding)
+    return _binding_view(binding, db.get(OrganizationDirectCredential, organization_id))
 
 
 @router.delete("/organizations/{organization_id}/projects/{project_id}/direct-binding",

@@ -10,6 +10,8 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     Uuid,
@@ -236,6 +238,37 @@ class ProjectDirectBinding(Base):
     client_login: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'configured_unverified'"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_token_revision: Mapped[int | None] = mapped_column(Integer)
+    verified_campaign_count: Mapped[int | None] = mapped_column(Integer)
+
+
+class OrganizationDirectCredential(Base):
+    """Agency credential shared by an organization's projects; encrypted AES-GCM.
+
+    The encryption key is *never* stored in this database.
+    """
+    __tablename__ = "organization_direct_credentials"
+    __table_args__ = (
+        CheckConstraint("revision > 0", name="ck_direct_credentials_revision"),
+        CheckConstraint("octet_length(encrypted_token) >= 30",
+                        name="ck_direct_credentials_ciphertext"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    encrypted_token: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),

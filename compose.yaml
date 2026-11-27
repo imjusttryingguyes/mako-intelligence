@@ -22,6 +22,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./backend/src:/app/src:ro
+      - mako_direct_keys:/run/mako-direct-keys
     depends_on:
       db:
         condition: service_healthy
@@ -42,5 +43,6 @@ services:
     command: npm run dev -- --hostname 0.0.0.0
 volumes:
   mako_pgdata:
+  mako_direct_keys:
   mako_node_modules:
   mako_next_cache:

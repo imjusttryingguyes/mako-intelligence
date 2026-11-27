@@ -177,3 +177,15 @@ footer {padding:28px 0;border-top:1px solid var(--border);color:#71849b;font-siz
 .direct-panel .button {margin-top:0;padding:10px 12px;}
 .direct-panel .confirmation-panel {margin-top:12px;}
 .direct-notice {font-size:12px;line-height:1.5;color:#a4efce;}
+
+.direct-verification-result {
+  background:#102d2a;
+  color:#b0efd7;
+  border:1px solid #2c685d;
+  border-radius:9px;
+  padding:12px;
+  font-size:12px;
+}
+.direct-verification-controls {margin-top:15px;}
+.direct-verification-controls .button {margin-top:0;}
+.direct-verification-controls .muted {font-size:11px;}
