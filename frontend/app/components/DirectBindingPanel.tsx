@@ -5,7 +5,10 @@ import { useEffect, useState, type FormEvent } from "react";
 type Binding = {
   provider: "yandex_direct";
   client_login: string | null;
-  status: "not_configured" | "configured_unverified";
+  status: "not_configured" | "configured_unverified" | "verified_at_time";
+  credential_available: boolean;
+  last_verified_at: string | null;
+  campaign_count: number | null;
 };
 
 type Props = {
@@ -25,10 +28,12 @@ export default function DirectBindingPanel({
   const [login, setLogin] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const url = `${api}/organizations/${organizationId}/projects/${projectId}/direct-binding`;
+  const verifyUrl = `${api}/organizations/${organizationId}/projects/${projectId}/direct-verify`;
 
   useEffect(() => {
     if (!expanded) return;
@@ -82,7 +87,7 @@ export default function DirectBindingPanel({
       const data = (await response.json()) as Binding;
       setBinding(data);
       setLogin(data.client_login ?? "");
-      setNotice("Логин сохранён. OAuth-доступ пока НЕ подключён и не проверен.");
+      setNotice("Логин сохранён. Теперь можно проверить агентский доступ.");
       onChanged();
     } catch {
       setError("Не удалось сохранить привязку. Проверь backend.");
@@ -111,6 +116,8 @@ export default function DirectBindingPanel({
       }
       setBinding({
         provider: "yandex_direct", client_login: null, status: "not_configured",
+        credential_available: binding?.credential_available ?? false,
+        last_verified_at: null, campaign_count: null,
       });
       setLogin("");
       setConfirmUnlink(false);
@@ -120,6 +127,38 @@ export default function DirectBindingPanel({
       setError("Не удалось убрать привязку. Проверь backend.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function verifyAccess() {
+    if (archived || !binding?.client_login || !binding.credential_available) return;
+    setVerifying(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(verifyUrl, {
+        method: "POST", credentials: "include",
+      });
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        setError("Нет доступа к проверке аккаунта или сессия истекла.");
+        return;
+      }
+      if (response.status === 409) {
+        setError("Настройки изменились. Обнови страницу и повтори проверку.");
+        return;
+      }
+      if (response.status === 502) {
+        setError("Яндекс Директ отклонил проверку. Проверь права агентского токена.");
+        return;
+      }
+      if (!response.ok) throw new Error("Verification failed");
+      const data = (await response.json()) as Binding;
+      setBinding(data);
+      setNotice("Доступ подтверждён на момент проверки. Автоматическая синхронизация пока выключена.");
+    } catch {
+      setError("Не удалось проверить Директ. Проверь backend и сеть.");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -137,19 +176,34 @@ export default function DirectBindingPanel({
       </button>
       {expanded && (
         <div className="direct-panel">
-          <div className="eyebrow">ЯНДЕКС ДИРЕКТ · C2.2a</div>
+          <div className="eyebrow">ЯНДЕКС ДИРЕКТ · C2.2b1</div>
           {loading && <p className="muted">Загружаем настройки…</p>}
           {!loading && binding && (
             <>
               <p className="direct-status">
-                {binding.status === "configured_unverified"
-                  ? "Логин указан · подключение не подтверждено"
-                  : "Аккаунт не указан"}
+                {binding.status === "verified_at_time"
+                  ? "Агентский доступ подтверждён при последней проверке"
+                  : binding.status === "configured_unverified"
+                    ? "Логин указан · доступ ещё не подтверждён"
+                    : "Аккаунт не указан"}
               </p>
               <p className="direct-disclaimer">
-                Это только привязка логина к проекту. OAuth-токен не сохраняется,
-                рекламные данные не загружаются.
+                Агентский токен хранится только на сервере в зашифрованном виде,
+                не передаётся в браузер. Синхронизация статистики пока не включена.
               </p>
+              {binding.status === "verified_at_time" && binding.last_verified_at && (
+                <p className="direct-verification-result">
+                  Кампаний: <strong>{binding.campaign_count ?? 0}</strong> · Проверено{" "}
+                  {new Date(binding.last_verified_at).toLocaleString("ru-RU")}
+                </p>
+              )}
+              {!binding.credential_available && (
+                <p className="direct-disclaimer">
+                  Агентский токен не импортирован. Выполни локальную команду из
+                  документации C2.2b1 в терминале VS Code, затем обнови страницу.
+                  Не вставляй токен в форму MAKO.
+                </p>
+              )}
               {archived ? (
                 <p className="muted">Проект в архиве — настройки доступны только для просмотра.</p>
               ) : (
@@ -188,6 +242,21 @@ export default function DirectBindingPanel({
                     )}
                   </div>
                 </form>
+              )}
+              {!archived && binding.client_login && binding.credential_available && (
+                <div className="direct-verification-controls">
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    disabled={saving || verifying || login.trim() !== binding.client_login}
+                    onClick={() => void verifyAccess()}
+                  >
+                    {verifying ? "Проверяем через Директ…" : "Проверить доступ к Директу"}
+                  </button>
+                  {login.trim() !== binding.client_login && (
+                    <p className="muted">Сначала сохрани изменённый логин.</p>
+                  )}
+                </div>
               )}
               {confirmUnlink && !archived && (
                 <div className="confirmation-panel">
