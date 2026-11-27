@@ -16,11 +16,11 @@
 - [x] 13 tests and schema drift check in GitHub Actions.
 - [x] Local migration applied (owner confirmed 2026-11-27).
 
-### B2.1 — Access policy and tenant-scoped queries [IN PROGRESS]
+### B2.1 — Access policy and tenant-scoped queries [COMPLETE]
 - [x] Define owner/admin/member and manager/editor/viewer project permissions.
 - [x] Tenant-scoped project query implementation.
 - [x] Pure and PostgreSQL integration tests for permitted and forbidden access.
-- [ ] Green CI for the pull request.
+- [x] Green CI for the pull request (35 tests passed, no failed checks).
 - [ ] Merge to main and verify final CI.
 
 ### B2.2 — Secure login and first project view [NOT STARTED]
