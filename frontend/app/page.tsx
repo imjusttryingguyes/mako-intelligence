@@ -15,6 +15,26 @@ type Project = {
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const transliteration: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh",
+  з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o",
+  п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts",
+  ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+function projectCodeFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .split("")
+    .map((letter) => transliteration[letter] ?? letter)
+    .join("")
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/g, "");
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const response = await fetch(api + path, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw new Error("API request failed");
@@ -28,6 +48,14 @@ export default function Home() {
   const [organizationId, setOrganizationId] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadedOrganizationId, setLoadedOrganizationId] = useState("");
+  const [projectReload, setProjectReload] = useState(0);
+  const [showCreate, setShowCreate] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectCode, setProjectCode] = useState("");
+  const [projectCodeTouched, setProjectCodeTouched] = useState(false);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [projectNotice, setProjectNotice] = useState("");
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -94,7 +122,7 @@ export default function Home() {
       })
       .finally(() => { if (active) setLoadingProjects(false); });
     return () => { active = false; };
-  }, [view, organizationId]);
+  }, [view, organizationId, projectReload]);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,9 +176,59 @@ export default function Home() {
     }
   }
 
+  async function createProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const selectedOrganization = organizations.find((org) => org.id === organizationId);
+    if (!selectedOrganization || !["owner", "admin"].includes(selectedOrganization.role)) {
+      setProjectError("Недостаточно прав для создания проекта.");
+      return;
+    }
+    setProjectBusy(true);
+    setProjectError("");
+    setProjectNotice("");
+    try {
+      const response = await fetch(api + `/organizations/${organizationId}/projects`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: projectName.trim(), slug: projectCode.trim() }),
+      });
+      if (response.status === 409) {
+        setProjectError("Такой код проекта уже используется в организации.");
+        return;
+      }
+      if (response.status === 422) {
+        setProjectError("Проверь название и код: 3–80 символов, латинские буквы, цифры и дефис.");
+        return;
+      }
+      if (response.status === 401) {
+        setProjectError("Сессия истекла. Войди заново.");
+        return;
+      }
+      if (response.status === 403 || response.status === 404) {
+        setProjectError("Нет доступа к созданию проекта в выбранной организации.");
+        return;
+      }
+      if (!response.ok) throw new Error("Could not create project");
+      const created = (await response.json()) as Project;
+      setProjectNotice(`Проект «${created.name}» создан. Он пока пустой.`);
+      setShowCreate(false);
+      setProjectName("");
+      setProjectCode("");
+      setProjectCodeTouched(false);
+      setProjectReload((value) => value + 1);
+    } catch {
+      setProjectError("Не удалось создать проект. Проверь подключение к backend.");
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
   // Compare organization IDs during render; old-tenant cards never flash on switch.
   const displayedProjects = loadedOrganizationId === organizationId ? projects : [];
   const projectLoading = loadingProjects || (!!organizationId && loadedOrganizationId !== organizationId);
+  const currentOrganization = organizations.find((org) => org.id === organizationId);
+  const canCreate = currentOrganization?.role === "owner" || currentOrganization?.role === "admin";
 
   return (
     <main className="shell">
@@ -160,7 +238,7 @@ export default function Home() {
           <span className="brand-light">INTELLIGENCE</span>
         </div>
         <div className="header-right">
-          <span className="version">CORE / B2.2</span>
+          <span className="version">CORE / B2.3</span>
           {view === "dashboard" && (
             <button className="button button-quiet" disabled={busy} onClick={signOut}>
               Выйти
@@ -238,7 +316,15 @@ export default function Home() {
                 aria-label="Организация"
                 className="form-input org-select"
                 value={organizationId}
-                onChange={(e) => setOrganizationId(e.target.value)}
+                onChange={(e) => {
+                  setOrganizationId(e.target.value);
+                  setShowCreate(false);
+                  setProjectName("");
+                  setProjectCode("");
+                  setProjectCodeTouched(false);
+                  setProjectError("");
+                  setProjectNotice("");
+                }}
               >
                 {organizations.map((organization) => (
                   <option value={organization.id} key={organization.id}>
@@ -250,7 +336,78 @@ export default function Home() {
             <span className="pill neutral">Режим: просмотр</span>
           </div>
 
-          <div className="section-top"><h2>Проекты</h2><span>{displayedProjects.length} доступно</span></div>
+          <div className="section-top">
+            <h2>Проекты</h2>
+            <div className="project-header-actions">
+              <span>{displayedProjects.length} доступно</span>
+              {canCreate && (
+                <button
+                  className="button button-primary create-trigger"
+                  type="button"
+                  onClick={() => {
+                    setShowCreate((open) => !open);
+                    setProjectError("");
+                    setProjectNotice("");
+                  }}
+                >
+                  {showCreate ? "Отмена" : "+ Новый проект"}
+                </button>
+              )}
+            </div>
+          </div>
+          {canCreate && showCreate && (
+            <form className="create-panel" onSubmit={createProject}>
+              <div>
+                <span className="eyebrow">НОВЫЙ РЕКЛАМНЫЙ ПРОЕКТ</span>
+                <h3>Добавить проект</h3>
+                <p className="muted">Пока создаётся пустая карточка без подключения рекламных кабинетов.</p>
+              </div>
+              <div className="create-fields">
+                <div>
+                  <label htmlFor="new-project-name" className="field-label">Название</label>
+                  <input
+                    className="form-input"
+                    id="new-project-name"
+                    value={projectName}
+                    onChange={(e) => {
+                      setProjectName(e.target.value);
+                      if (!projectCodeTouched) setProjectCode(projectCodeFromName(e.target.value));
+                    }}
+                    placeholder="Например, Еврофлетт"
+                    maxLength={200}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-project-code" className="field-label">Код проекта</label>
+                  <input
+                    className="form-input"
+                    id="new-project-code"
+                    value={projectCode}
+                    onChange={(e) => {
+                      setProjectCodeTouched(true);
+                      setProjectCode(e.target.value.toLowerCase());
+                    }}
+                    placeholder="euroflett"
+                    minLength={3}
+                    maxLength={80}
+                    pattern="[a-z0-9][a-z0-9-]{1,78}[a-z0-9]"
+                    title="От 3 до 80 символов: латинские буквы, цифры и дефис. Без дефиса в начале или конце."
+                    required
+                  />
+                </div>
+              </div>
+              {projectError && <div role="alert" className="error-message">{projectError}</div>}
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={projectBusy || !organizationId}
+              >
+                {projectBusy ? "Создаём…" : "Создать проект"}
+              </button>
+            </form>
+          )}
+          {projectNotice && <div role="status" className="success-message">{projectNotice}</div>}
           {error && <div role="alert" className="error-message">{error}</div>}
           {projectLoading && <p className="muted">Загружаем проекты…</p>}
           {!projectLoading && !organizations.length && (
@@ -282,7 +439,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer>MAKO Intelligence · B2.2 · Только локальная разработка</footer>
+      <footer>MAKO Intelligence · B2.3 · Только локальная разработка</footer>
     </main>
   );
 }
