@@ -11,8 +11,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, delete, select, update
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from mako_intelligence.core.auth import COOKIE_NAME, hash_password
@@ -22,6 +23,7 @@ from mako_intelligence.db.models import (
     Organization,
     OrganizationMembership,
     Project,
+    ProjectEvent,
     ProjectMembership,
     User,
 )
@@ -438,3 +440,180 @@ def test_project_rename_preflight_allows_only_local_origin(api) -> None:
         "Access-Control-Request-Method": "PATCH",
     })
     assert denied.headers.get("access-control-allow-origin") is None
+
+
+def change_status_request(
+    client: TestClient,
+    org: uuid.UUID,
+    project: uuid.UUID,
+    action: str,
+    headers: dict[str, str] | None = None,
+):
+    return client.post(
+        f"/organizations/{org}/projects/{project}/{action}",
+        headers={"Origin": ORIGIN} if headers is None else headers,
+    )
+
+
+def test_owner_archive_restore_and_full_audit_history(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    url = f"/organizations/{ids['org']}/projects/{ids['first']}"
+    before_membership = db.get(ProjectMembership, (ids["first"], ids["member"]))
+    assert before_membership is not None
+    assert client.get(url + "/history").json() == []
+
+    rename = rename_request(client, ids["org"], ids["first"], "  First renamed  ")
+    assert rename.status_code == 200
+    # Identical name must not create a redundant event.
+    assert rename_request(client, ids["org"], ids["first"], "First renamed").status_code == 200
+
+    archived = change_status_request(client, ids["org"], ids["first"], "archive")
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert archived.json()["actions"] == ["view"]
+    assert client.get(url).json()["status"] == "archived"
+    assert rename_request(client, ids["org"], ids["first"]).status_code == 409
+    assert change_status_request(client, ids["org"], ids["first"], "archive").status_code == 409
+
+    restored = change_status_request(client, ids["org"], ids["first"], "restore")
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "active"
+    assert "manage_members" in restored.json()["actions"]
+    assert change_status_request(client, ids["org"], ids["first"], "restore").status_code == 409
+
+    event_list = client.get(url + "/history")
+    assert event_list.status_code == 200
+    events = event_list.json()
+    assert len(events) == 3
+    by_action = {event["action"]: event for event in events}
+    assert set(by_action) == {"rename", "archive", "restore"}
+    assert by_action["rename"]["old_name"] == "First"
+    assert by_action["rename"]["new_name"] == "First renamed"
+    assert by_action["archive"]["old_status"] == "active"
+    assert by_action["archive"]["new_status"] == "archived"
+    assert by_action["restore"]["old_status"] == "archived"
+    assert by_action["restore"]["new_status"] == "active"
+    for event in events:
+        assert event["actor"] == "Owner"
+        assert event["actor_id"] == str(ids["owner"])
+        assert event["created_at"]
+    assert db.get(Project, ids["first"]).id == ids["first"]
+    assert db.get(Project, ids["first"]).slug == "first"
+    assert db.get(ProjectMembership, (ids["first"], ids["member"])) is not None
+
+
+def test_admin_can_archive_and_restore_project(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(OrganizationMembership, (ids["org"], ids["member"]))
+    membership.role = "admin"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    assert change_status_request(client, ids["org"], ids["second"], "archive").status_code == 200
+    assert change_status_request(client, ids["org"], ids["second"], "restore").status_code == 200
+    events = client.get(
+        f"/organizations/{ids['org']}/projects/{ids['second']}/history"
+    ).json()
+    assert len(events) == 2 and all(event["actor"] == "Member" for event in events)
+
+
+def test_member_even_manager_cannot_archive_restore_or_view_history(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(ProjectMembership, (ids["first"], ids["member"]))
+    membership.role = "manager"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    for action in ("archive", "restore"):
+        assert change_status_request(client, ids["org"], ids["first"], action).status_code == 403
+    assert client.get(
+        f"/organizations/{ids['org']}/projects/{ids['first']}/history"
+    ).status_code == 403
+    assert db.get(Project, ids["first"]).status == "active"
+
+
+def test_outsider_and_wrong_org_ids_do_not_disclose_project_history(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for action in ("archive", "restore"):
+        assert change_status_request(
+            client, ids["other_org"], ids["other_project"], action
+        ).status_code == 404
+        assert change_status_request(
+            client, ids["org"], ids["other_project"], action
+        ).status_code == 404
+    for org, project in (
+        (ids["org"], ids["other_project"]), (ids["other_org"], ids["other_project"]),
+        (ids["org"], uuid.uuid4()),
+    ):
+        assert client.get(
+            f"/organizations/{org}/projects/{project}/history"
+        ).status_code == 404
+
+
+def test_unauthenticated_archive_restore_and_history_are_rejected(api) -> None:
+    client, _db, ids, _pw = api
+    for action in ("archive", "restore"):
+        assert change_status_request(
+            client, ids["org"], ids["first"], action
+        ).status_code == 401
+    assert client.get(
+        f"/organizations/{ids['org']}/projects/{ids['first']}/history"
+    ).status_code == 401
+
+
+def test_archive_and_restore_require_exact_origin(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for action in ("archive", "restore"):
+        for headers in ({}, {"Origin": "https://attacker.example"}):
+            assert change_status_request(
+                client, ids["org"], ids["first"], action, headers=headers
+            ).status_code == 403
+    assert db.get(Project, ids["first"]).status == "active"
+    assert not db.scalar(select(ProjectEvent.id).limit(1))
+
+
+def test_status_change_conflict_preserves_state_and_audit(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert change_status_request(client, ids["org"], ids["archived"], "archive").status_code == 409
+    assert change_status_request(client, ids["org"], ids["first"], "restore").status_code == 409
+    assert db.get(Project, ids["first"]).status == "active"
+    assert db.get(Project, ids["archived"]).status == "archived"
+    assert not db.scalar(select(ProjectEvent.id).limit(1))
+
+
+def test_database_trigger_prohibits_deletion_and_rewriting_audit_rows(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert change_status_request(client, ids["org"], ids["first"], "archive").status_code == 200
+    event = db.scalar(select(ProjectEvent).where(ProjectEvent.project_id == ids["first"]))
+    assert event is not None
+
+    savepoint = db.begin_nested()
+    with pytest.raises(DBAPIError):
+        db.execute(update(ProjectEvent).where(ProjectEvent.id == event.id).values(action="rename"))
+    savepoint.rollback()
+    db.expire_all()
+
+    savepoint = db.begin_nested()
+    with pytest.raises(DBAPIError):
+        db.execute(delete(ProjectEvent).where(ProjectEvent.id == event.id))
+    savepoint.rollback()
+    assert db.scalar(select(ProjectEvent.action).where(ProjectEvent.id == event.id)) == "archive"
+
+
+def test_audit_events_must_reference_project_in_same_organization(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    savepoint = db.begin_nested()
+    with pytest.raises(DBAPIError):
+        db.add(ProjectEvent(
+            organization_id=ids["other_org"],
+            project_id=ids["first"],
+            actor_user_id=ids["owner"],
+            action="rename", old_name="A", new_name="B",
+        ))
+        db.flush()
+    savepoint.rollback()
+    assert not db.scalar(select(ProjectEvent.id).limit(1))
