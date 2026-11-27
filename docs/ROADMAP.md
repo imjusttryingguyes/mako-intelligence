@@ -48,24 +48,40 @@
 - [x] Final CI green and merged to main.
 - [x] Owner verified rename via VS Code (2026-11-27).
 
-### B2.4b — Archive/restore and change audit [IN PROGRESS]
+### B2.4b — Archive/restore and change audit [COMPLETE]
 - [x] Reversible archive/restore restricted to organization owner/admin.
 - [x] Additive event table and database trigger denying audit-row rewrites/deletes.
 - [x] Record actor and before/after values atomically for rename/archive/restore.
 - [x] Tenant-scoped history API and inline project timeline.
 - [x] UI confirmation before status changes; no delete actions.
 - [x] Integration tests for permissions, CSRF and audit append-only constraints.
-- [ ] CI green and changes merged into main.
-- [ ] Owner applies migration 0003 and verifies archive/restore/history locally.
+- [x] CI green and changes merged into main (74 Python tests).
+- [x] Owner confirmed migration 0003, archive/restore/history locally (2026-11-27).
 
 ### B2.4c — Further project settings [LATER]
 - Detailed settings (no advertising data yet).
 - Production audit hardening: separate DB roles, backups and integrity verification.
 
-## C — Read-only Yandex connector
-- Confirm API requirements and permissions.
-- Implement authorized read-only ingestion and sync status.
-- Reconcile reports against source data.
+## C — Read-only Yandex Direct connector
+### C1 — Fixed-contract read client [IN PROGRESS]
+- [x] Verify official API v501 docs, OAuth and developer approval requirements.
+- [x] Implement allowlisted Campaigns.get and AgencyClients.get with pagination cap.
+- [x] Sanitize upstream errors; keep OAuth token out of persisted configuration.
+- [x] Add an interactive terminal-only probe; no token in shell history.
+- [x] Offline contract tests using httpx.MockTransport (no real accounts).
+- [ ] Green GitHub Actions and merged PR.
+
+### C2 — Authorized live-account linkage [NOT STARTED]
+- [ ] Obtain developer app approval and use a separate permitted test account.
+- [ ] Design revocable/encrypted server-side token storage before persistent sync.
+- [ ] Bind the selected Direct client login to an authorized MAKO project.
+- [ ] Pull a small campaign inventory and verify against the Direct UI.
+
+### C3 — Statistics ingestion [NOT STARTED]
+- [ ] Read Reports TSV, handle 202/429 and quotas, reconcile dates/currency/conversions.
+- [ ] Store tenant-scoped statistics with freshness/lineage and sync errors.
+- [ ] Build manual refresh, later bounded background sync.
+
 
 ## D — Insight dashboard
 - KPI cards, comparisons, campaign reports and data freshness.
