@@ -21,13 +21,16 @@
 - [x] Tenant-scoped project query implementation.
 - [x] Pure and PostgreSQL integration tests for permitted and forbidden access.
 - [x] Green CI for the pull request (35 tests passed, no failed checks).
-- [ ] Merge to main and verify final CI.
+- [x] Merge to main and verify final CI.
 
-### B2.2 — Secure login and first project view [NOT STARTED]
-- [ ] Plan session-backed authentication and owner bootstrap.
-- [ ] Add a safe local-only login flow; no hardcoded credentials.
-- [ ] Protected read-only project endpoint and frontend project list.
-- [ ] Test unauthorized, cross-organization, archived and missing-project access.
+### B2.2 — Local login and first project view [READY FOR LOCAL VERIFICATION]
+- [x] Design DB-backed sessions and one-time owner bootstrap.
+- [x] Implement local-only login and logout (no hardcoded credentials).
+- [x] Implement protected read-only project endpoints and frontend list.
+- [x] 47 backend tests green in PR CI; frontend build green.
+- [ ] Merge to main and verify final CI.
+- [ ] Local bootstrap, login/logout and demonstration project check in VS Code.
+- [x] Test unauthorized, cross-organization, archived and missing-project access.
 
 ## C — Read-only Yandex connector
 - Confirm API requirements and permissions.

@@ -1,8 +1,4 @@
-"""Deliberately tiny configuration layer for Milestone A.
-
-When authentication and tokens arrive, replace with typed environment settings.
-Never log secret-bearing environment variables.
-"""
+"""Local-development configuration; never log secrets or database connection URLs."""
 import os
 
 
@@ -12,3 +8,8 @@ def frontend_origin() -> str:
 
 def database_url() -> str | None:
     return os.getenv("DATABASE_URL")
+
+
+def local_auth_enabled() -> bool:
+    # Explicit opt-in. Must remain off in nonlocal environments.
+    return os.getenv("MAKO_LOCAL_AUTH_ENABLED") == "1"
