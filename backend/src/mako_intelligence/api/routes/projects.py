@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from mako_intelligence.api.routes.auth import _require_origin, authenticated_user
 from mako_intelligence.core.permissions import project_permissions, visible_projects
-from mako_intelligence.db.models import Organization, OrganizationMembership, Project, User
+from mako_intelligence.db.models import (
+    Organization, OrganizationMembership, Project, ProjectEvent, User,
+)
 from mako_intelligence.db.session import get_db
 
 router = APIRouter(tags=["projects"])
@@ -177,15 +179,25 @@ def rename_project(
     project = db.scalar(
         select(Project).where(
             Project.organization_id == organization_id, Project.id == project_id
-        )
+        ).with_for_update()
     )
     if project is None:
         raise HTTPException(status_code=404, detail="not found")
     if project.status != "active":
         raise HTTPException(status_code=409, detail="archived project is read-only")
 
-    project.name = payload.name
-    db.commit()
+    if project.name != payload.name:
+        old_name = project.name
+        project.name = payload.name
+        db.add(ProjectEvent(
+            organization_id=organization_id,
+            project_id=project.id,
+            actor_user_id=user.id,
+            action="rename",
+            old_name=old_name,
+            new_name=payload.name,
+        ))
+        db.commit()
     return {
         "id": str(project.id),
         "slug": project.slug,
@@ -198,6 +210,128 @@ def rename_project(
             )
         ),
     }
+
+
+
+def _change_project_status(
+    *,
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user: User,
+    db: Session,
+    action: str,
+) -> dict:
+    role = _organization_membership(db, user.id, organization_id)
+    if role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+
+    # Serialize competing state changes so double archive/restore cannot both succeed.
+    project = db.scalar(
+        select(Project).where(
+            Project.organization_id == organization_id, Project.id == project_id
+        ).with_for_update()
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="not found")
+    old_status = "active" if action == "archive" else "archived"
+    new_status = "archived" if action == "archive" else "active"
+    if project.status != old_status:
+        raise HTTPException(status_code=409, detail="project status already changed")
+    project.status = new_status
+    db.add(ProjectEvent(
+        organization_id=organization_id,
+        project_id=project_id,
+        actor_user_id=user.id,
+        action=action,
+        old_status=old_status,
+        new_status=new_status,
+    ))
+    db.commit()
+
+    actions = project_permissions(
+        db, user_id=user.id, organization_id=organization_id, project_id=project.id
+    )
+    return {
+        "id": str(project.id),
+        "slug": project.slug,
+        "name": project.name,
+        "status": project.status,
+        "actions": sorted(action.value for action in actions),
+    }
+
+
+@router.post("/organizations/{organization_id}/projects/{project_id}/archive")
+def archive_project(
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(authenticated_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_origin(request)
+    return _change_project_status(
+        organization_id=organization_id, project_id=project_id,
+        user=user, db=db, action="archive",
+    )
+
+
+@router.post("/organizations/{organization_id}/projects/{project_id}/restore")
+def restore_project(
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(authenticated_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_origin(request)
+    return _change_project_status(
+        organization_id=organization_id, project_id=project_id,
+        user=user, db=db, action="restore",
+    )
+
+
+@router.get("/organizations/{organization_id}/projects/{project_id}/history")
+def project_history(
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user: User = Depends(authenticated_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    role = _organization_membership(db, user.id, organization_id)
+    if role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+    found = db.scalar(
+        select(Project.id).where(
+            Project.organization_id == organization_id, Project.id == project_id
+        )
+    )
+    if found is None:
+        raise HTTPException(status_code=404, detail="not found")
+
+    stmt = (
+        select(ProjectEvent, User.display_name)
+        .join(User, User.id == ProjectEvent.actor_user_id)
+        .where(
+            ProjectEvent.organization_id == organization_id,
+            ProjectEvent.project_id == project_id,
+        )
+        .order_by(ProjectEvent.created_at.desc(), ProjectEvent.id.desc())
+        .limit(100)
+    )
+    return [
+        {
+            "id": str(event.id),
+            "action": event.action,
+            "actor": actor_name,
+            "actor_id": str(event.actor_user_id),
+            "old_name": event.old_name,
+            "new_name": event.new_name,
+            "old_status": event.old_status,
+            "new_status": event.new_status,
+            "created_at": event.created_at.isoformat(),
+        }
+        for event, actor_name in db.execute(stmt)
+    ]
 
 
 @router.get("/organizations/{organization_id}/projects/{project_id}")
