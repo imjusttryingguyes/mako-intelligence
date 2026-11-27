@@ -51,6 +51,7 @@ def test_unsupported_input_mode_rejected(
 
 
 def test_empty_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(builtins, "input", lambda _prompt: "1")
+    answers = iter(["1", "   "])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
     with pytest.raises(ValueError, match="Токен пустой"):
         prompt_for_token()
