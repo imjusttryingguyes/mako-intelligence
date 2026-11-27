@@ -1,8 +1,8 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestones A–B2.4a complete. B2.4b: reversible project archive and audit history.**
+**Milestones A–B2.4b complete. C1: isolated, read-only Yandex Direct API client (no account connected yet).**
 
-This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
+This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data or paid AI is connected. C1 includes a disabled-by-default provider client and optional interactive local probe; no OAuth token is persisted or uploaded. Do not expose it publicly.
 
 ## Requirements
 - Git
@@ -89,6 +89,26 @@ The PostgreSQL audit table blocks row UPDATE and DELETE through a trigger.
 This is suitable for local development, not a tamper-proof production audit
 because a privileged database administrator can change database triggers.
 Never use `docker compose down -v` to stop the app. No customer data yet.
+
+## C1 — Yandex Direct read-only API contract
+
+A minimal provider adapter can read campaign IDs/names and list agency client
+logins via API `v501` only after the developer's OAuth app is registered and
+approved for Direct API access. It has **no HTTP endpoints**, no background
+jobs, no token storage and no database migrations. Tests use fake responses
+only and do not contact Yandex. See `docs/YANDEX_DIRECT_C1.md`.
+
+Once **you independently obtain approved API access**, a temporary local
+read-only probe is available:
+
+```powershell
+docker compose exec backend python -m mako_intelligence.tools.yandex_direct_probe
+```
+
+The prompt hides the token (never put it in the command line, a chat, GitHub,
+a screenshot, the frontend or an environment file). It prints only counts,
+not account/client/campaign names. Do not use a live customer account without
+authorization. We will design secure persistent OAuth linkage in C2.
 
 ## Tests
 ```bash
