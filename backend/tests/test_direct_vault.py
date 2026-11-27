@@ -34,7 +34,6 @@ def test_ciphertext_tamper_and_wrong_key_are_rejected_without_leak() -> None:
     tampered = blob[:-1] + bytes([blob[-1] ^ 1])
     for candidate in (tampered, b"\x02" + blob[1:], b"\x01", b""):
         with pytest.raises(DirectVaultError) as failure:
-            DirectVaultError  # Never echo token or encrypted content in errors.
             DirectVault(os.urandom(32)).open(candidate, org)
         assert token not in str(failure.value)
     with pytest.raises(DirectVaultError):

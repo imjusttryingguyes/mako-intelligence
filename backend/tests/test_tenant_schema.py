@@ -21,13 +21,13 @@ def test_initial_migration_created_expected_tables() -> None:
         assert {
             "alembic_version", "organizations", "users", "organization_memberships",
             "auth_sessions", "local_credentials", "project_events",
-            "project_direct_bindings",
+            "project_direct_bindings", "organization_direct_credentials",
             "projects", "project_memberships",
         } <= names
         with engine.connect() as connection:
             assert connection.execute(
                 text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == "0004_direct_binding"
+            ).scalar_one() == "0005_direct_vault"
     finally:
         engine.dispose()
 

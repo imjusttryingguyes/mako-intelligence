@@ -21,6 +21,7 @@ from mako_intelligence.db.models import (
     AuthSession,
     LocalCredential,
     Organization,
+    OrganizationDirectCredential,
     OrganizationMembership,
     Project,
     ProjectDirectBinding,
@@ -838,3 +839,214 @@ def test_binding_is_organization_scoped_even_with_same_login(api) -> None:
     assert client.get(binding_url(ids["org"], ids["first"])).status_code == 404
     other = client.get(binding_url(ids["other_org"], ids["other_project"])).json()
     assert other["client_login"] == "shared-login"
+
+
+def verify_path(org: uuid.UUID, project: uuid.UUID) -> str:
+    return f"/organizations/{org}/projects/{project}/direct-verify"
+
+
+def set_test_agency_token(db: Session, org: uuid.UUID, token: str = "FAKE-NOT-REAL"):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from mako_intelligence.integrations.direct_vault import DirectVault
+
+    key = AESGCM.generate_key(bit_length=256)
+    vault = DirectVault(key)
+    db.add(OrganizationDirectCredential(
+        organization_id=org, encrypted_token=vault.seal(token, org), revision=1,
+    ))
+    db.flush()
+    return key
+
+
+def stub_direct_verify(monkeypatch, key, *, agency_login="client-example",
+                       campaigns=3, error=None):
+    from mako_intelligence.api.routes import direct_verification
+    from mako_intelligence.integrations.yandex_direct import DirectReadError
+
+    calls: list[str] = []
+
+    class FakeDirect:
+        def __init__(self, token):
+            assert token == "FAKE-NOT-REAL"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get_agency_clients(self):
+            calls.append("agency")
+            if error is not None:
+                raise DirectReadError("redacted provider error", error_code=error)
+            return [{"Login": agency_login}]
+
+        def get_campaigns(self, *, client_login):
+            calls.append("campaigns:" + client_login)
+            return [{"Id": i, "Name": "Synthetic"} for i in range(campaigns)]
+
+    monkeypatch.setattr(direct_verification, "DirectReadClient", FakeDirect)
+    monkeypatch.setattr(direct_verification, "load_vault_key", lambda: key)
+    return calls
+
+
+def test_owner_verifies_bound_advertiser_and_sees_count_not_token(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"]).status_code == 200
+    key = set_test_agency_token(db, ids["org"])
+    calls = stub_direct_verify(monkeypatch, key)
+
+    response = client.post(verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    assert response.status_code == 200
+    value = response.json()
+    assert value["status"] == "verified_at_time"
+    assert value["campaign_count"] == 3
+    assert value["last_verified_at"] is not None
+    assert value["credential_available"] is True
+    assert "FAKE-NOT-REAL" not in response.text
+    assert calls == ["agency", "campaigns:client-example"]
+
+    stored = db.get(ProjectDirectBinding, ids["first"])
+    assert stored.verified_token_revision == 1
+    assert stored.verified_campaign_count == 3
+    assert client.get(binding_url(ids["org"], ids["first"])).json()["status"] == (
+        "verified_at_time"
+    )
+
+
+def test_repeat_direct_verify_uses_one_minute_cooldown(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    calls = stub_direct_verify(monkeypatch, key)
+    url = verify_path(ids["org"], ids["first"])
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 200
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 200
+    assert calls == ["agency", "campaigns:client-example"]
+
+
+def test_changing_direct_login_invalidates_last_verification(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    stub_direct_verify(monkeypatch, key)
+    assert client.post(
+        verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN}
+    ).status_code == 200
+    assert put_binding(client, ids["org"], ids["first"], "new-login").status_code == 200
+    value = client.get(binding_url(ids["org"], ids["first"])).json()
+    assert value["status"] == "configured_unverified"
+    assert value["campaign_count"] is None
+    assert value["last_verified_at"] is None
+
+
+def test_replacing_agency_credential_requires_new_verification(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    stub_direct_verify(monkeypatch, key)
+    client.post(verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN})
+    credential = db.get(OrganizationDirectCredential, ids["org"])
+    credential.revision += 1
+    db.commit()
+    value = client.get(binding_url(ids["org"], ids["first"])).json()
+    assert value["status"] == "configured_unverified"
+    assert value["last_verified_at"] is None
+
+
+def test_verify_requires_credential_and_binding(api) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    url = verify_path(ids["org"], ids["first"])
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 409
+    put_binding(client, ids["org"], ids["first"])
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 409
+
+
+def test_verify_denies_member_outsider_and_unauthenticated(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    url = verify_path(ids["org"], ids["first"])
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 401
+    sign_in(client, db.get(User, ids["member"]).email, password)
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 403
+    sign_in(client, db.get(User, ids["stranger"]).email, password)
+    assert client.post(url, headers={"Origin": ORIGIN}).status_code == 404
+
+
+def test_verify_refuses_archived_and_wrong_tenant_projects(api) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    assert client.post(
+        verify_path(ids["org"], ids["archived"]), headers={"Origin": ORIGIN}
+    ).status_code == 409
+    assert client.post(
+        verify_path(ids["other_org"], ids["other_project"]), headers={"Origin": ORIGIN}
+    ).status_code == 404
+    assert client.post(
+        verify_path(ids["org"], ids["other_project"]), headers={"Origin": ORIGIN}
+    ).status_code == 404
+
+
+def test_verify_requires_origin_before_network(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    calls = stub_direct_verify(monkeypatch, key)
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert client.post(verify_path(ids["org"], ids["first"]), headers=headers).status_code == 403
+    assert calls == []
+
+
+def test_direct_verify_denies_unlisted_agency_client(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    calls = stub_direct_verify(monkeypatch, key, agency_login="another-advertiser")
+    response = client.post(
+        verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN}
+    )
+    assert response.status_code == 403
+    assert calls == ["agency"]
+    assert db.get(ProjectDirectBinding, ids["first"]).verified_at is None
+
+
+def test_direct_verify_sanitizes_upstream_error_and_does_not_save(api, monkeypatch) -> None:
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    key = set_test_agency_token(db, ids["org"])
+    stub_direct_verify(monkeypatch, key, error=58)
+    response = client.post(
+        verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN}
+    )
+    assert response.status_code == 502
+    assert "58" in response.text
+    assert "FAKE-NOT-REAL" not in response.text
+    assert db.get(ProjectDirectBinding, ids["first"]).verified_at is None
+
+
+def test_direct_verify_key_unavailable_returns_503_without_leaking(api, monkeypatch) -> None:
+    from mako_intelligence.api.routes import direct_verification
+    from mako_intelligence.integrations.direct_vault import DirectVaultError
+
+    client, db, ids, password = api
+    sign_in(client, db.get(User, ids["owner"]).email, password)
+    put_binding(client, ids["org"], ids["first"])
+    set_test_agency_token(db, ids["org"])
+
+    def no_key():
+        raise DirectVaultError("key unavailable")
+
+    monkeypatch.setattr(direct_verification, "load_vault_key", no_key)
+    response = client.post(
+        verify_path(ids["org"], ids["first"]), headers={"Origin": ORIGIN}
+    )
+    assert response.status_code == 503
+    assert "FAKE-NOT-REAL" not in response.text
