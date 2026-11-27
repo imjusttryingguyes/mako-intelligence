@@ -5,7 +5,6 @@ protection. Sessions live in PostgreSQL, not in browser-local storage.
 """
 from __future__ import annotations
 
-import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
