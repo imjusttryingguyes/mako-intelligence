@@ -219,3 +219,119 @@ def test_local_auth_requires_explicit_enablement(api, monkeypatch) -> None:
     response = sign_in(client, db.get(User, ids["owner"]).email, password)
     assert response.status_code == 503
     assert not db.scalar(select(AuthSession.user_id).limit(1))
+
+
+def create_project_request(
+    client: TestClient,
+    organization_id: uuid.UUID,
+    *,
+    name: str = "  Новый проект  ",
+    slug: str = "new-project",
+    headers: dict[str, str] | None = None,
+):
+    return client.post(
+        f"/organizations/{organization_id}/projects",
+        json={"name": name, "slug": slug},
+        headers={"Origin": ORIGIN} if headers is None else headers,
+    )
+
+
+def test_unauthenticated_project_create_is_denied(api) -> None:
+    client, _db, ids, _pw = api
+    response = create_project_request(client, ids["org"])
+    assert response.status_code == 401
+
+
+def test_org_owner_can_create_empty_project_and_read_it(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+
+    response = create_project_request(client, ids["org"])
+    assert response.status_code == 201
+    created = response.json()
+    assert created["name"] == "Новый проект"
+    assert created["slug"] == "new-project"
+    assert created["status"] == "active"
+    assert created["actions"] == ["edit", "manage_members", "view"]
+    project_id = uuid.UUID(created["id"])
+    assert db.get(Project, project_id).organization_id == ids["org"]
+    assert client.get(
+        f"/organizations/{ids['org']}/projects/{project_id}"
+    ).status_code == 200
+    listed = client.get(f"/organizations/{ids['org']}/projects").json()
+    assert created["id"] in [p["id"] for p in listed]
+
+
+def test_org_admin_can_create_project(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(OrganizationMembership, (ids["org"], ids["member"]))
+    membership.role = "admin"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    response = create_project_request(client, ids["org"], slug="admin-project")
+    assert response.status_code == 201
+
+
+def test_regular_member_even_manager_cannot_create_project(api) -> None:
+    client, db, ids, password = api
+    membership = db.get(ProjectMembership, (ids["first"], ids["member"]))
+    membership.role = "manager"
+    db.flush()
+    assert sign_in(client, db.get(User, ids["member"]).email, password).status_code == 200
+    response = create_project_request(client, ids["org"])
+    assert response.status_code == 403
+    assert db.scalar(select(Project).where(Project.slug == "new-project")) is None
+
+
+def test_nonmember_cannot_create_in_other_organization(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["stranger"]).email, password).status_code == 200
+    assert create_project_request(client, ids["org"]).status_code == 404
+
+
+def test_cross_org_creation_requires_membership_not_submitted_user_id(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    response = client.post(
+        f"/organizations/{ids['other_org']}/projects",
+        json={"name": "Forbidden", "slug": "foreign-new", "user_id": str(ids["stranger"])},
+        headers={"Origin": ORIGIN},
+    )
+    assert response.status_code == 404
+
+
+def test_missing_or_untrusted_origin_prevents_project_creation(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    for headers in ({}, {"Origin": "https://attacker.example"}):
+        assert create_project_request(client, ids["org"], headers=headers).status_code == 403
+    assert db.scalar(select(Project).where(Project.slug == "new-project")) is None
+
+
+def test_project_slug_must_be_valid_and_duplicate_is_conflict(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+
+    for slug in ("xx", "UPPER", "bad slug", "кириллица", "-leading", "trailing-",
+                 "x" * 81):
+        assert create_project_request(client, ids["org"], slug=slug).status_code == 422
+    assert create_project_request(client, ids["org"], name="   ").status_code == 422
+    assert create_project_request(client, ids["org"], name="x" * 201).status_code == 422
+
+    assert create_project_request(client, ids["org"], slug="first").status_code == 409
+    assert create_project_request(client, ids["org"], slug="new-project").status_code == 201
+    assert create_project_request(client, ids["org"], slug="new-project").status_code == 409
+
+
+def test_same_slug_is_allowed_in_different_organizations(api) -> None:
+    client, db, ids, password = api
+    assert sign_in(client, db.get(User, ids["owner"]).email, password).status_code == 200
+    first = create_project_request(client, ids["org"], slug="shared-code")
+    assert first.status_code == 201
+    assert sign_in(client, db.get(User, ids["stranger"]).email, password).status_code == 200
+    second = create_project_request(client, ids["other_org"], slug="shared-code")
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+    assert client.get(
+        f"/organizations/{ids['org']}/projects/{first.json()['id']}"
+    ).status_code == 404
