@@ -1,8 +1,8 @@
 # MAKO Intelligence — Core 0.1
 
-**Milestone A / B1 / B2.1 complete. B2.2: local-only login and protected project list.**
+**Milestones A–B2.2 complete. B2.3: create empty projects in the local dashboard.**
 
-This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Read-only organization and project APIs use verified sessions and the B2.1 tenant access rules. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
+This is a **local-only development scaffold, not a production application**. The local login uses a salted scrypt password hash and revocable database-backed HttpOnly cookie sessions. Organization/project read APIs and project creation use verified sessions and B2.1 tenant access rules. Only organization owners/admins may create projects; POST also checks the request Origin. No real advertising data, Yandex OAuth or paid AI is connected. Do not expose it publicly.
 
 ## Requirements
 - Git
@@ -49,6 +49,16 @@ docker compose exec backend python -m mako_intelligence.tools.bootstrap_local_ow
 ```
 
 The bootstrap prompts interactively for an email, display name and password twice (password is not echoed). It refuses if any organization or user already exists; it creates one owner, MAKO organization and an empty demo project. Open `http://localhost:3000` and log in. **Never type the password into a command argument, screenshot, GitHub issue or chat.** See `docs/AUTH_B2.md`.
+
+## B2.3 project creation
+After `git pull` and `docker compose up --build -d`, open `http://localhost:3000` and sign in.
+Organization owners/admins see a **+ Новый проект** button. Give the new project a title
+and a unique, URL-friendly code (Latin letters/numbers/hyphens, 3–80 characters).
+The browser suggests a code from the Russian project name. The server validates
+both values and enforces uniqueness within each organization.
+A new project is an **empty record**; no advertising connection or client data is created.
+Project members and outsiders cannot use the creation endpoint.
+No migration is necessary for B2.3. Existing demo project and credentials are preserved.
 
 ## Tests
 ```bash
