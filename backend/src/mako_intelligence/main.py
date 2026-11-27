@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from mako_intelligence.api.routes.auth import router as auth_router
 from mako_intelligence.api.routes.direct_bindings import router as direct_binding_router
-from mako_intelligence.api.routes.direct_verification import router as verification_router
 from mako_intelligence.api.routes.direct_campaigns import router as campaigns_router
+from mako_intelligence.api.routes.direct_verification import router as verification_router
 from mako_intelligence.api.routes.health import router as health_router
 from mako_intelligence.api.routes.projects import router as project_router
 from mako_intelligence.core.config import frontend_origin
