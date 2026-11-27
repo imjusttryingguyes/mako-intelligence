@@ -10,29 +10,35 @@
 - [x] Portable npm lockfile and reproducible npm ci.
 
 ## B — Roles and projects
-### B1 — Database foundation [IN PROGRESS]
-- [x] Initial ORM model and Alembic migration: organizations, users, organization memberships, projects, project memberships.
-- [x] Referential integrity across organization and project memberships.
-- [x] Integration tests using disposable PostgreSQL in GitHub Actions.
-- [x] CI is green after PR (13 tests, schema migration and Alembic drift check).
-- [ ] Apply first migration to owner's local Docker environment.
+### B1 — Database foundation [COMPLETE]
+- [x] Initial ORM model and Alembic migration for organizations, users and projects.
+- [x] Composite foreign keys protecting cross-organization memberships.
+- [x] 13 tests and schema drift check in GitHub Actions.
+- [x] Local migration applied (owner confirmed 2026-11-27).
 
-### B2 — Authentication and access [NOT STARTED]
-- [ ] Design and test secure authentication/session approach.
-- [ ] Project-level authorization and negative access tests.
-- [ ] First safe owner/organization/project setup.
-- [ ] API endpoints only after access controls exist.
+### B2.1 — Access policy and tenant-scoped queries [IN PROGRESS]
+- [x] Define owner/admin/member and manager/editor/viewer project permissions.
+- [x] Tenant-scoped project query implementation.
+- [x] Pure and PostgreSQL integration tests for permitted and forbidden access.
+- [ ] Green CI for the pull request.
+- [ ] Merge to main and verify final CI.
+
+### B2.2 — Secure login and first project view [NOT STARTED]
+- [ ] Plan session-backed authentication and owner bootstrap.
+- [ ] Add a safe local-only login flow; no hardcoded credentials.
+- [ ] Protected read-only project endpoint and frontend project list.
+- [ ] Test unauthorized, cross-organization, archived and missing-project access.
 
 ## C — Read-only Yandex connector
-- Verify API policies and permissions.
-- Authorized read-only connector, ingestion and sync status.
-- Metric reconciliation against Direct source.
+- Confirm API requirements and permissions.
+- Implement authorized read-only ingestion and sync status.
+- Reconcile reports against source data.
 
 ## D — Insight dashboard
-- Real KPI cards, period comparisons, project reports and data freshness.
+- KPI cards, comparisons, campaign reports and data freshness.
 
 ## E — AI Analyst + Audit Lite
-- Deterministic metric functions, limited AI explanations, evidence-linked findings.
+- Deterministic metric tools, bounded AI explanations and evidence-backed rules.
 
 ## F — Controlled client pilot
-- One authorized project with data protection, backups, auditability, and spending caps.
+- Authorized project and privacy/backup/audit/cost gates.
