@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import DirectCampaignPreview from "./DirectCampaignPreview";
 
 type Binding = {
   provider: "yandex_direct";
@@ -257,6 +258,13 @@ export default function DirectBindingPanel({
                     <p className="muted">Сначала сохрани изменённый логин.</p>
                   )}
                 </div>
+              )}
+              {!archived && binding.status === "verified_at_time" && (
+                <DirectCampaignPreview
+                  key={`${organizationId}:${projectId}:${binding.client_login}:${binding.last_verified_at}`}
+                  organizationId={organizationId}
+                  projectId={projectId}
+                />
               )}
               {confirmUnlink && !archived && (
                 <div className="confirmation-panel">
