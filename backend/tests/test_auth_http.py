@@ -671,13 +671,15 @@ def test_owner_can_configure_read_change_and_unlink_without_storing_token(api) -
     url = binding_url(ids["org"], ids["first"])
     assert client.get(url).json() == {
         "provider": "yandex_direct", "client_login": None,
-        "status": "not_configured",
+        "status": "not_configured", "credential_available": False,
+        "last_verified_at": None, "campaign_count": None,
     }
     response = put_binding(client, ids["org"], ids["first"])
     assert response.status_code == 200
     assert response.json() == {
         "provider": "yandex_direct", "client_login": "client-example",
-        "status": "configured_unverified",
+        "status": "configured_unverified", "credential_available": False,
+        "last_verified_at": None, "campaign_count": None,
     }
     record = db.get(ProjectDirectBinding, ids["first"])
     assert record is not None
