@@ -6,9 +6,9 @@
 - [x] Next.js local page that checks backend availability.
 - [x] PostgreSQL container in Compose with persistent volume.
 - [x] Backend unit tests and lint rules.
-- [ ] Verify GitHub Actions backend and frontend jobs.
-- [ ] Run full Docker Compose smoke test on owner's machine.
-- [ ] Commit npm lockfile and use npm ci for reproducibility.
+- [x] Verify GitHub Actions backend and frontend jobs.
+- [x] Run full Docker Compose smoke test on owner's machine (confirmed 2026-11-27).
+- [x] Commit portable npm lockfile and use npm ci for reproducibility.
 
 ## B — Roles and projects
 - Initial ERD and migration tool for organizations/projects/users/memberships.

@@ -38,7 +38,7 @@ python -m ruff check backend/src backend/tests
 Frontend without Docker (Node.js 22):
 ```bash
 cd frontend
-npm install
+npm ci
 npm run typecheck
 npm run build
 npm run dev
@@ -46,7 +46,7 @@ npm run dev
 
 The page displays `API недоступен` when the backend is off. This is expected.
 
-**Reproducibility note:** npm lockfile is not in this initial offline scaffold. The first install with npm registry access must generate and commit `frontend/package-lock.json`. Then change CI and frontend Dockerfile from `npm install` to `npm ci` and re-test.
+**Reproducibility:** `frontend/package-lock.json` is committed and contains platform-specific optional packages for Linux glibc, Linux musl (Docker Alpine), and Windows. CI and Docker install with `npm ci`. When dependencies change, regenerate the lockfile from a clean installation and verify both CI and the Docker build.
 
 ## Architecture
 - `frontend/`: Next.js UI and backend status.
