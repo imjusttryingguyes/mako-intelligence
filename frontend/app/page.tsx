@@ -56,6 +56,11 @@ export default function Home() {
   const [projectBusy, setProjectBusy] = useState(false);
   const [projectError, setProjectError] = useState("");
   const [projectNotice, setProjectNotice] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState("");
+  const [editingOrgId, setEditingOrgId] = useState("");
+  const [editingName, setEditingName] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState("");
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -168,6 +173,10 @@ export default function Home() {
       setProjects([]);
       setLoadedOrganizationId("");
       setOrganizationId("");
+      setEditingProjectId("");
+      setEditingOrgId("");
+      setEditingName("");
+      setEditError("");
       setView("login");
     } catch {
       setError("Ошибка выхода. Попробуй ещё раз.");
@@ -224,6 +233,57 @@ export default function Home() {
     }
   }
 
+  async function renameProject(event: FormEvent<HTMLFormElement>, project: Project) {
+    event.preventDefault();
+    const orgId = organizationId;
+    const org = organizations.find((item) => item.id === orgId);
+    if (!org || !["owner", "admin"].includes(org.role) || project.status !== "active") {
+      setEditError("Недостаточно прав для изменения проекта.");
+      return;
+    }
+    setEditBusy(true);
+    setEditError("");
+    setProjectNotice("");
+    try {
+      const response = await fetch(
+        api + `/organizations/${orgId}/projects/${project.id}`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: editingName.trim() }),
+        }
+      );
+      if (response.status === 422) {
+        setEditError("Введи название от 1 до 200 символов.");
+        return;
+      }
+      if (response.status === 401) {
+        setEditError("Сессия истекла — войди заново.");
+        return;
+      }
+      if (response.status === 403 || response.status === 404) {
+        setEditError("Нет доступа к изменению этого проекта.");
+        return;
+      }
+      if (response.status === 409) {
+        setEditError("Архивный проект нельзя переименовать.");
+        return;
+      }
+      if (!response.ok) throw new Error("Project rename failed");
+      const changed = (await response.json()) as Project;
+      setEditingProjectId("");
+      setEditingOrgId("");
+      setEditingName("");
+      setProjectNotice(`Название проекта изменено на «${changed.name}».`);
+      setProjectReload((value) => value + 1);
+    } catch {
+      setEditError("Не удалось сохранить название. Проверь backend.");
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   // Compare organization IDs during render; old-tenant cards never flash on switch.
   const displayedProjects = loadedOrganizationId === organizationId ? projects : [];
   const projectLoading = loadingProjects || (!!organizationId && loadedOrganizationId !== organizationId);
@@ -238,7 +298,7 @@ export default function Home() {
           <span className="brand-light">INTELLIGENCE</span>
         </div>
         <div className="header-right">
-          <span className="version">CORE / B2.3</span>
+          <span className="version">CORE / B2.4a</span>
           {view === "dashboard" && (
             <button className="button button-quiet" disabled={busy} onClick={signOut}>
               Выйти
@@ -324,6 +384,10 @@ export default function Home() {
                   setProjectCodeTouched(false);
                   setProjectError("");
                   setProjectNotice("");
+                  setEditingProjectId("");
+                  setEditingOrgId("");
+                  setEditingName("");
+                  setEditError("");
                 }}
               >
                 {organizations.map((organization) => (
@@ -432,6 +496,64 @@ export default function Home() {
                     ? "Управление проектом"
                     : project.actions.includes("edit") ? "Редактирование" : "Только просмотр"}
                 </div>
+                {canCreate && project.status === "active" && (
+                  <div className="project-settings">
+                    {editingProjectId === project.id && editingOrgId === organizationId ? (
+                      <form onSubmit={(event) => renameProject(event, project)}>
+                        <label
+                          htmlFor={`rename-${project.id}`}
+                          className="field-label"
+                        >
+                          Новое название
+                        </label>
+                        <input
+                          id={`rename-${project.id}`}
+                          className="form-input"
+                          value={editingName}
+                          maxLength={200}
+                          onChange={(event) => setEditingName(event.target.value)}
+                          required
+                        />
+                        {editError && <div role="alert" className="error-message">{editError}</div>}
+                        <div className="project-settings-actions">
+                          <button
+                            className="button button-primary"
+                            type="submit"
+                            disabled={editBusy || !editingName.trim()}
+                          >
+                            {editBusy ? "Сохраняем…" : "Сохранить"}
+                          </button>
+                          <button
+                            className="button button-quiet"
+                            type="button"
+                            disabled={editBusy}
+                            onClick={() => {
+                              setEditingProjectId("");
+                              setEditingOrgId("");
+                              setEditError("");
+                            }}
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        className="project-settings-link"
+                        type="button"
+                        disabled={editBusy}
+                        onClick={() => {
+                          setEditingProjectId(project.id);
+                          setEditingOrgId(organizationId);
+                          setEditingName(project.name);
+                          setEditError("");
+                        }}
+                      >
+                        Переименовать
+                      </button>
+                    )}
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -439,7 +561,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer>MAKO Intelligence · B2.3 · Только локальная разработка</footer>
+      <footer>MAKO Intelligence · B2.4a · Только локальная разработка</footer>
     </main>
   );
 }
