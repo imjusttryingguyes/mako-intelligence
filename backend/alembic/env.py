@@ -2,8 +2,8 @@
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from mako.core.config import database_url
-from mako.db.models import Base
+from mako_intelligence.core.config import database_url
+from mako_intelligence.db.models import Base
 
 config = context.config
 target_metadata = Base.metadata

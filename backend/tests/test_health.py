@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from mako.api.routes import health
-from mako.main import app
+from mako_intelligence.api.routes import health
+from mako_intelligence.main import app
 
 client = TestClient(app)
 

@@ -24,7 +24,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: python -m uvicorn mako.main:app --host 0.0.0.0 --port 8000 --reload
+    command: python -m uvicorn mako_intelligence.main:app --host 0.0.0.0 --port 8000 --reload
   frontend:
     build: ./frontend
     environment:

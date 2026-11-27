@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from mako.metrics.calculations import cpa, cpc, cr, ctr, ratio
+from mako_intelligence.metrics.calculations import cpa, cpc, cr, ctr, ratio
 
 
 def test_exact_decimal_math() -> None:

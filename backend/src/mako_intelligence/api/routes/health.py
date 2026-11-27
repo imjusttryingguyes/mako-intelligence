@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from mako import __version__
-from mako.db.connection import check_database
+from mako_intelligence.db.connection import check_database
 
 router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)

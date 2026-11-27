@@ -2,7 +2,7 @@
 
 from sqlalchemy import create_engine, text
 
-from mako.core.config import database_url
+from mako_intelligence.core.config import database_url
 
 
 def check_database() -> None:
