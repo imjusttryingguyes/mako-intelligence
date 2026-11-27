@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type View = "loading" | "login" | "dashboard";
 type User = { id: string; email: string; display_name: string };
@@ -11,6 +11,22 @@ type Project = {
   name: string;
   status: "active" | "archived";
   actions: string[];
+};
+type ProjectChange = {
+  id: string;
+  action: "rename" | "archive" | "restore";
+  actor: string;
+  old_name: string | null;
+  new_name: string | null;
+  old_status: string | null;
+  new_status: string | null;
+  created_at: string;
+};
+type PendingStatusChange = {
+  organizationId: string;
+  projectId: string;
+  name: string;
+  action: "archive" | "restore";
 };
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -61,6 +77,16 @@ export default function Home() {
   const [editingName, setEditingName] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<PendingStatusChange | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusError, setStatusError] = useState("");
+  const [historyContext, setHistoryContext] = useState<{
+    organizationId: string; projectId: string;
+  } | null>(null);
+  const [historyEvents, setHistoryEvents] = useState<ProjectChange[]>([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const historyRequest = useRef(0);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +103,11 @@ export default function Home() {
         });
         if (!active) return;
         if (res.status === 401) {
-          setView("login");
+          historyRequest.current += 1;
+      setHistoryContext(null);
+      setHistoryEvents([]);
+      setPendingStatus(null);
+      setView("login");
           return;
         }
         if (!res.ok) throw new Error("API unavailable");
@@ -284,6 +314,77 @@ export default function Home() {
     }
   }
 
+  async function changeProjectStatus() {
+    const pending = pendingStatus;
+    if (!pending || pending.organizationId !== organizationId || !canCreate) return;
+    setStatusBusy(true);
+    setStatusError("");
+    setProjectNotice("");
+    try {
+      const response = await fetch(
+        api + `/organizations/${pending.organizationId}/projects/${pending.projectId}/${pending.action}`,
+        { method: "POST", credentials: "include" }
+      );
+      if (response.status === 409) {
+        setStatusError("Статус уже изменился. Обнови страницу и повтори действие.");
+        return;
+      }
+      if (response.status === 401) {
+        setStatusError("Сессия истекла. Войди заново.");
+        return;
+      }
+      if (response.status === 403 || response.status === 404) {
+        setStatusError("Нет доступа к изменению этого проекта.");
+        return;
+      }
+      if (!response.ok) throw new Error("Status operation failed");
+      setPendingStatus(null);
+      setHistoryContext(null);
+      historyRequest.current += 1;
+      setHistoryEvents([]);
+      setProjectNotice(
+        pending.action === "archive"
+          ? `Проект «${pending.name}» перемещён в архив.`
+          : `Проект «${pending.name}» восстановлен из архива.`
+      );
+      setProjectReload((value) => value + 1);
+    } catch {
+      setStatusError("Не удалось изменить статус проекта. Проверь backend.");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
+  async function toggleHistory(project: Project) {
+    historyRequest.current += 1;
+    const requestId = historyRequest.current;
+    if (historyContext?.organizationId === organizationId &&
+        historyContext.projectId === project.id) {
+      setHistoryContext(null);
+      setHistoryEvents([]);
+      setHistoryError("");
+      setHistoryBusy(false);
+      return;
+    }
+    const orgId = organizationId;
+    setHistoryContext({ organizationId: orgId, projectId: project.id });
+    setHistoryEvents([]);
+    setHistoryError("");
+    setHistoryBusy(true);
+    try {
+      const data = await getJSON<ProjectChange[]>(
+        `/organizations/${orgId}/projects/${project.id}/history`
+      );
+      if (historyRequest.current === requestId) setHistoryEvents(data);
+    } catch {
+      if (historyRequest.current === requestId) {
+        setHistoryError("Не удалось получить историю проекта.");
+      }
+    } finally {
+      if (historyRequest.current === requestId) setHistoryBusy(false);
+    }
+  }
+
   // Compare organization IDs during render; old-tenant cards never flash on switch.
   const displayedProjects = loadedOrganizationId === organizationId ? projects : [];
   const projectLoading = loadingProjects || (!!organizationId && loadedOrganizationId !== organizationId);
@@ -298,7 +399,7 @@ export default function Home() {
           <span className="brand-light">INTELLIGENCE</span>
         </div>
         <div className="header-right">
-          <span className="version">CORE / B2.4a</span>
+          <span className="version">CORE / B2.4b</span>
           {view === "dashboard" && (
             <button className="button button-quiet" disabled={busy} onClick={signOut}>
               Выйти
@@ -388,6 +489,12 @@ export default function Home() {
                   setEditingOrgId("");
                   setEditingName("");
                   setEditError("");
+                  setPendingStatus(null);
+                  setStatusError("");
+                  historyRequest.current += 1;
+                  setHistoryContext(null);
+                  setHistoryEvents([]);
+                  setHistoryError("");
                 }}
               >
                 {organizations.map((organization) => (
@@ -397,7 +504,7 @@ export default function Home() {
                 ))}
               </select>
             </div>
-            <span className="pill neutral">Режим: просмотр</span>
+            <span className="pill neutral">Режим: локальный</span>
           </div>
 
           <div className="section-top">
@@ -554,6 +661,96 @@ export default function Home() {
                     )}
                   </div>
                 )}
+                {canCreate && (
+                  <div className="project-status-section">
+                    <div className="project-status-actions">
+                      <button
+                        type="button"
+                        className={project.status === "active"
+                          ? "project-settings-link archive-link" : "project-settings-link"}
+                        disabled={statusBusy}
+                        onClick={() => {
+                          setPendingStatus({
+                            organizationId,
+                            projectId: project.id,
+                            name: project.name,
+                            action: project.status === "active" ? "archive" : "restore",
+                          });
+                          setStatusError("");
+                        }}
+                      >
+                        {project.status === "active" ? "В архив" : "Восстановить"}
+                      </button>
+                      <button
+                        type="button"
+                        className="project-settings-link"
+                        disabled={statusBusy}
+                        onClick={() => void toggleHistory(project)}
+                      >
+                        {historyContext?.organizationId === organizationId &&
+                        historyContext.projectId === project.id
+                          ? "Скрыть историю" : "История"}
+                      </button>
+                    </div>
+                    {pendingStatus?.organizationId === organizationId &&
+                    pendingStatus.projectId === project.id && (
+                      <div className="confirmation-panel">
+                        <p>
+                          {pendingStatus.action === "archive"
+                            ? "Переместить проект в архив? Его данные и участники сохранятся, но редактирование будет недоступно."
+                            : "Восстановить проект из архива? Редактирование снова станет доступно."}
+                        </p>
+                        {statusError && (
+                          <div className="error-message" role="alert">{statusError}</div>
+                        )}
+                        <div className="project-settings-actions">
+                          <button
+                            type="button"
+                            className="button button-primary"
+                            disabled={statusBusy}
+                            onClick={() => void changeProjectStatus()}
+                          >
+                            {statusBusy ? "Сохраняем…" : "Подтвердить"}
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-quiet"
+                            disabled={statusBusy}
+                            onClick={() => { setPendingStatus(null); setStatusError(""); }}
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {historyContext?.organizationId === organizationId &&
+                    historyContext.projectId === project.id && (
+                      <div className="history-panel">
+                        <div className="eyebrow">ИСТОРИЯ ПРОЕКТА</div>
+                        {historyBusy && <p className="muted">Загружаем историю…</p>}
+                        {historyError && (
+                          <div className="error-message" role="alert">{historyError}</div>
+                        )}
+                        {!historyBusy && !historyError && historyEvents.length === 0 && (
+                          <p className="muted">Пока нет событий. История ведётся с версии B2.4b.</p>
+                        )}
+                        {!historyBusy && historyEvents.map((event) => (
+                          <div className="history-entry" key={event.id}>
+                            <strong>
+                              {event.action === "rename"
+                                ? `Переименование: ${event.old_name} → ${event.new_name}`
+                                : event.action === "archive"
+                                  ? "Перенесён в архив" : "Восстановлен из архива"}
+                            </strong>
+                            <span>
+                              {event.actor} · {new Date(event.created_at).toLocaleString("ru-RU")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -561,7 +758,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer>MAKO Intelligence · B2.4a · Только локальная разработка</footer>
+      <footer>MAKO Intelligence · B2.4b · Только локальная разработка</footer>
     </main>
   );
 }
